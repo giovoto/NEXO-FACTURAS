@@ -1,0 +1,2 @@
+firebase functions:config:set siigo.client_id="xxx" siigo.client_secret="xxx"
+

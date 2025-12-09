@@ -1,0 +1,69 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+runtime: nodejs20
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+  cpu: 1
+  memoryMiB: 1024
+env:
+  # --- Firebase Admin SDK (Server-side) ---
+  # This secret contains the JSON for the service account.
+  - variable: FIREBASE_SERVICE_ACCOUNT
+    secret: FIREBASE_SERVICE_ACCOUNT
+  # --- Siigo API ---
+  - variable: SIIGO_BASE_URL
+    value: "https://api.siigo.com"
+  - variable: SIIGO_AUTH_URL
+    value: "https://api.siigo.com/auth"
+  - variable: SIIGO_PURCHASE_INVOICE_PATH
+    value: "/v1/purchase-invoices"
+  - variable: DEFAULT_DOC_TYPE_ID
+    value: "24" # Default for Purchase Invoice, can be a secret
+  - variable: NEXT_PUBLIC_SIMULATE_SIIGO
+    value: "true"
+    availability:
+      - BUILD
+      - RUNTIME
+  # --- Firebase Web SDK (Client-side) ---
+  # Inject Firebase client-side config from secrets
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    secret: NEXT_PUBLIC_FIREBASE_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    secret: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    secret: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    secret: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    secret: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    secret: NEXT_PUBLIC_FIREBASE_APP_ID
+    availability:
+      - BUILD
+      - RUNTIME
+  # --- GMAIL API Credentials ---
+  # To enable Gmail integration, create these secrets in your project and uncomment the lines below.
+  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters for instructions.
+  #
+  # - variable: GMAIL_CLIENT_ID
+  #   secret: GMAIL_CLIENT_ID
+  # - variable: GMAIL_CLIENT_SECRET
+  #   secret: GMAIL_CLIENT_SECRET
+  # - variable: GMAIL_REFRESH_TOKEN
+  #   secret: GMAIL_REFRESH_TOKEN
