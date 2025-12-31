@@ -80,7 +80,7 @@ export const ProfileForm = memo(function ProfileForm({ user, isOpen, onClose }: 
       // Update public users table
       const { error: dbError } = await supabase
         .from('users')
-        .update({ display_name: data.displayName })
+        .update({ display_name: data.displayName || null })
         .eq('auth_id', user.id);
 
       if (dbError) throw dbError;
