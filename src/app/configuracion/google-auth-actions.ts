@@ -2,25 +2,23 @@
 'use server';
 
 import 'server-only';
-import { getAuthenticatedUser, db } from '@/lib/firebase-admin';
-// import { google } from 'googleapis'; // Temporarily disabled
-import { revalidatePath } from 'next/cache';
-
-const getUserDoc = (userId: string) => db.collection('users').doc(userId);
+// Firebase removed - these functions are disabled
+// TODO: Implement with Supabase if needed
 
 /**
  * Checks if a valid Google refresh token exists for the user.
+ * DISABLED - Needs Supabase implementation
  */
-export async function getAuthStatusAction(idToken: string): Promise<{ isConnected: boolean }> {
-    try {
-        const user = await getAuthenticatedUser(idToken);
-        const doc = await getUserDoc(user.uid).get();
-        const isConnected = !!doc.data()?.googleRefreshToken;
-        return { isConnected };
-    } catch (error) {
-        console.error("Error checking auth status:", error);
-        return { isConnected: false };
-    }
+export async function getAuthStatusAction(): Promise<{ isConnected: boolean }> {
+    return { isConnected: false };
+}
+
+/**
+ * Saves the Google OAuth2 refresh token to the user's document.
+ * DISABLED - Needs Supabase implementation
+ */
+export async function saveRefreshTokenAction(authCode: string): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: 'Google OAuth temporarily disabled - awaiting Supabase migration' };
 }
 
 /**
