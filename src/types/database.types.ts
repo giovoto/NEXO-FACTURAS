@@ -129,6 +129,7 @@ export interface Database {
                     profile_id: string | null
                     lines: Json | null
                     created_by: string | null
+                    file_path: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -167,6 +168,7 @@ export interface Database {
                     profile_id?: string | null
                     lines?: Json | null
                     created_by?: string | null
+                    file_path?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -205,6 +207,7 @@ export interface Database {
                     profile_id?: string | null
                     lines?: Json | null
                     created_by?: string | null
+                    file_path?: string | null
                     created_at?: string
                     updated_at?: string
                 }
