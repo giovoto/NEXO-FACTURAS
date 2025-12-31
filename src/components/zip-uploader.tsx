@@ -8,13 +8,6 @@ import { Input } from '@/components/ui/input';
 import { useLogs } from '@/lib/logger.tsx';
 import { actionImportZip } from '@/app/actions';
 import { useAuth } from './auth-provider';
-import type { User } from 'firebase/auth';
-
-// Helper to get ID token
-async function getIdToken(user: User | null, forceRefresh = false): Promise<string> {
-    if (!user) return '';
-    return user.getIdToken(forceRefresh);
-}
 
 interface ZipUploaderProps {
   onProcessComplete: () => void;
@@ -33,8 +26,12 @@ export function ZipUploader({ onProcessComplete }: ZipUploaderProps) {
     addLog('INFO', `Comenzando a procesar el archivo ZIP: ${file.name}`);
 
     try {
-      const idToken = await getIdToken(user, true);
-      const result = await actionImportZip(idToken, activeEmpresaId, file);
+      // Create FormData for Server Action
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('empresaId', activeEmpresaId);
+
+      const result = await actionImportZip(formData);
 
       if (result.success) {
         addLog('SUCCESS', `Archivo procesado. Se importaron ${result.imported} facturas.`);
