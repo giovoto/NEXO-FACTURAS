@@ -1,19 +1,25 @@
 
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useLogs } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, Download, CheckCircle, XCircle, Hourglass } from 'lucide-react';
+import { Loader2, RefreshCw, Download, CheckCircle, XCircle, Hourglass, Calendar } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { DataTable } from '@/components/data-table';
 import { columns } from '@/components/columns';
-import { SearchBar } from '@/components/search-bar';
-import { StatusFilter } from '@/components/status-filter';
+import { SearchBar } from '@/components/ui/search-bar';
+import { FilterBar, type FilterState } from '@/components/filter-bar';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { Autocomplete, type AutocompleteOption } from '@/components/ui/autocomplete';
+import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import type { Factura } from '@/lib/types';
 import type { RowSelectionState } from '@tanstack/react-table';
 import { ZipUploader } from '@/components/zip-uploader';
 import { procesarCorreosAction, exportarFacturasAction } from '@/app/actions';
 import type { User } from 'firebase/auth';
+import { applyFilters, filtersToQueryParams, queryParamsToFilters, getEmptyFilters } from '@/lib/filter-utils';
+import { DateRange } from 'react-day-picker';
 
 export const runtime = 'nodejs';
 
@@ -29,11 +35,26 @@ export default function InvoicesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const { addLog } = useLogs();
   const { user, facturas: initialFacturas, isFacturasLoading, reloadFacturas, handleStatusChange, activeEmpresaId, empresaRole } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeStatus, setActiveStatus] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Initialize filters from URL or empty state
+  const [filters, setFilters] = useState<FilterState>(() => {
+    if (searchParams) {
+      return queryParamsToFilters(searchParams);
+    }
+    return getEmptyFilters();
+  });
 
   const canEdit = empresaRole === 'admin' || empresaRole === 'editor';
+
+  // Update URL when filters change
+  useEffect(() => {
+    const params = filtersToQueryParams(filters);
+    const newUrl = params.toString() ? `?${params.toString()}` : '/facturacion';
+    router.replace(newUrl, { scroll: false });
+  }, [filters, router]);
 
   const handleBulkStatusChange = (newStatus: string) => {
     if (!canEdit) return;
@@ -45,41 +66,27 @@ export default function InvoicesPage() {
 
   const pageColumns = useMemo(() => columns({ onStatusChange: handleStatusChange, canEdit }), [handleStatusChange, canEdit]);
 
-  // Calcular contadores por estado
-  const statusCounts = useMemo(() => {
-    const counts: { [key: string]: number } = {
-      'Aceptado': 0,
-      'Rechazado': 0,
-      'Procesado': 0
-    };
-    initialFacturas.forEach(f => {
-      if (counts[f.estado] !== undefined) {
-        counts[f.estado]++;
-      }
-    });
-    return counts;
+  // Get unique proveedores for autocomplete
+  const proveedorOptions = useMemo<AutocompleteOption[]>(() => {
+    const uniqueProveedores = Array.from(new Set(initialFacturas.map(f => f.nombreEmisor)));
+    return uniqueProveedores.map(proveedor => ({
+      value: proveedor,
+      label: proveedor,
+    }));
   }, [initialFacturas]);
 
+  // Apply filters to facturas
   const filteredFacturas = useMemo(() => {
-    let filtered = initialFacturas;
+    return applyFilters(initialFacturas, filters, ['nombreEmisor', 'folio', 'categoria']);
+  }, [initialFacturas, filters]);
 
-    // Filtrar por estado
-    if (activeStatus) {
-      filtered = filtered.filter(f => f.estado === activeStatus);
-    }
+  const handleFilterChange = (newFilters: Partial<FilterState>) => {
+    setFilters(prev => ({ ...prev, ...newFilters }));
+  };
 
-    // Filtrar por búsqueda
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(f =>
-        f.nombreEmisor.toLowerCase().includes(query) ||
-        f.folio.toLowerCase().includes(query) ||
-        (f.categoria && f.categoria.toLowerCase().includes(query))
-      );
-    }
-
-    return filtered;
-  }, [initialFacturas, activeStatus, searchQuery]);
+  const handleClearAllFilters = () => {
+    setFilters(getEmptyFilters());
+  };
 
   const handleProcess = async () => {
     if (!user || !activeEmpresaId || !canEdit) return;
@@ -128,11 +135,15 @@ export default function InvoicesPage() {
 
   return (
     <>
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+      <div className="flex-1 space-y-6 p-4 md:p-8 pt-6">
+        {/* Breadcrumbs */}
+        <Breadcrumbs />
+
+        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Comprobantes</h1>
-            <p className="text-muted-foreground">Gestiona, procesa y exporta tus comprobantes.</p>
+            <h1 className="text-4xl font-bold tracking-tight">Comprobantes</h1>
+            <p className="text-muted-foreground mt-1">Gestiona, procesa y exporta tus comprobantes.</p>
           </div>
           <div className="flex w-full flex-col sm:w-auto sm:flex-row items-center gap-2">
             {canEdit && <ZipUploader onProcessComplete={() => reloadFacturas(true)} />}
@@ -149,32 +160,58 @@ export default function InvoicesPage() {
           </div>
         </div>
 
+        {/* Search and Filters */}
+        <div className="space-y-4">
+          {/* Search Bar */}
+          <SearchBar
+            onSearch={(query) => handleFilterChange({ search: query })}
+            placeholder="Buscar por proveedor, número o categoría..."
+            className="w-full"
+            isLoading={isLoading}
+          />
 
-        {/* Barra de búsqueda y filtros */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Buscar por proveedor, número o categoría..."
-              className="flex-1"
-            />
+          {/* Filter Pills and Additional Filters */}
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1">
+              <FilterBar
+                activeFilters={filters}
+                onFilterChange={handleFilterChange}
+                onClearAll={handleClearAllFilters}
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* Date Range Picker */}
+              <DateRangePicker
+                value={filters.dateRange || undefined}
+                onChange={(range: DateRange | undefined) => handleFilterChange({ dateRange: range || null })}
+                className="w-full sm:w-[280px]"
+                placeholder="Filtrar por fecha"
+              />
+
+              {/* Proveedor Autocomplete */}
+              <Autocomplete
+                options={proveedorOptions}
+                value={filters.proveedor || undefined}
+                onValueChange={(value) => handleFilterChange({ proveedor: value || null })}
+                placeholder="Todos los proveedores"
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No se encontraron proveedores"
+                className="w-full sm:w-[240px]"
+              />
+            </div>
           </div>
 
-          <StatusFilter
-            statuses={[
-              { label: 'Aceptados', value: 'Aceptado', variant: 'success', count: statusCounts['Aceptado'] },
-              { label: 'En Proceso', value: 'Procesado', variant: 'warning', count: statusCounts['Procesado'] },
-              { label: 'Rechazados', value: 'Rechazado', variant: 'destructive', count: statusCounts['Rechazado'] },
-            ]}
-            activeStatus={activeStatus}
-            onStatusChange={setActiveStatus}
-          />
+          {/* Results Count */}
+          <div className="text-sm text-muted-foreground">
+            Mostrando <span className="font-medium text-foreground">{filteredFacturas.length}</span> de{' '}
+            <span className="font-medium text-foreground">{initialFacturas.length}</span> comprobantes
+          </div>
         </div>
 
         {/* Acciones masivas */}
         {numSelected > 0 && canEdit && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-4 bg-muted/30 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-4 bg-muted/30 shadow-sm animate-in fade-in-0 duration-200">
             <p className="text-sm font-semibold text-foreground flex-grow">
               {numSelected} comprobante(s) seleccionado(s)
             </p>

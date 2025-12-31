@@ -207,9 +207,18 @@ export async function exportarFacturasAction(idToken: string, empresaId: string)
 
 // --- ZIP Processing Action ---
 
-export async function actionImportZip(idToken: string, empresaId: string, file: File) {
+export async function actionImportZip(formData: FormData) {
+    const idToken = formData.get('idToken') as string;
+    const empresaId = formData.get('empresaId') as string;
+    const file = formData.get('file') as File;
+
+    if (!idToken || !empresaId || !file) {
+        return { success: false, error: "Faltan datos requeridos (token, empresa, archivo)." };
+    }
+
     try {
         const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
+        // Need to convert to ArrayBuffer
         const buf = await file.arrayBuffer();
         const parsedItems = await parseInvoiceZip(buf);
         const xmlItem = parsedItems.find((item): item is { type: 'xml'; name: string; parsed: any } => item.type === 'xml');

@@ -1,118 +1,197 @@
-
-import axios from 'axios';
-import { wrapper } from 'axios-cookiejar-support';
-import { CookieJar } from 'tough-cookie';
-import * as cheerio from 'cheerio';
+import puppeteer from 'puppeteer';
 import { ParsedInvoice } from './xml-service';
+import { parseDianExcel } from './dian-excel-parser';
+const AdmZip = require('adm-zip');
+import * as fs from 'fs';
+import * as path from 'path';
 
-// Setup axios with cookie support to maintain session
-const jar = new CookieJar();
-const client = wrapper(axios.create({ jar }));
+/**
+ * Scrapes DIAN portal directly using Puppeteer automation
+ * Authenticates with token, navigates to Documents, exports Excel, and downloads ZIP
+ */
+export async function scrapeDianDocuments(
+    tokenUrl: string,
+    startDate?: string,
+    endDate?: string
+): Promise<{ success: boolean; documents: ParsedInvoice[]; message?: string }> {
 
-export async function scrapeDianDocuments(tokenUrl: string, startDate?: string, endDate?: string): Promise<{ success: boolean; documents: ParsedInvoice[]; message?: string }> {
+    let browser;
+
     try {
-        console.log('--- STARTING DIAN SCRAPING ---');
+        console.log('🚀 --- STARTING DIAN AUTOMATION WITH PUPPETEER ---');
         console.log('Token URL:', tokenUrl);
 
-        // 1. Authenticate / Initialize Session
-        const authResponse = await client.get(tokenUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
-            }
+        // Launch Puppeteer browser
+        console.log('🌐 Launching browser...');
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu'
+            ]
         });
 
-        console.log('Authentication successful, cookies saved');
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
 
-        // 2. Navigate to Export page (the correct endpoint)
-        const exportDocsUrl = 'https://catalogo-vpfe.dian.gov.co/Document/Export';
-
-        const response = await client.get(exportDocsUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': tokenUrl
-            }
-        });
-
-        const html = response.data;
-        console.log('Export page loaded, analyzing structure...');
-
-        const $ = cheerio.load(html);
-        const documents: ParsedInvoice[] = [];
-
-        // Parse any tables or forms on the Export page
-        $('table tbody tr').each((i, row) => {
-            const cols = $(row).find('td');
-            if (cols.length < 5) return;
-
-            const cufe = $(row).find('a[href*="DocumentKey"]').attr('href')?.split('DocumentKey=')[1] || '';
-            const supplierName = $(cols[2]).text().trim();
-            const dateStr = $(cols[4]).text().trim();
-            const totalStr = $(cols[5]).text().trim();
-
-            if (cufe) {
-                documents.push({
-                    id: '',
-                    issueDate: dateStr,
-                    total: parseFloat(totalStr.replace(/[^0-9,-]+/g, "").replace(",", ".")),
-                    supplierName: supplierName,
-                    metadata: {
-                        cufe: cufe,
-                        number: 'N/A'
-                    },
-                    lines: []
-                } as any);
-            }
-        });
-
-        // Fallback with simulated data
-        if (documents.length === 0) {
-            console.warn('No documents extracted from HTML. Returning simulated data.');
-            return {
-                success: true,
-                message: 'Conexión exitosa. Mostrando documentos recientes (Simulación).',
-                documents: [
-                    {
-                        id: 'SETP-99000213',
-                        issueDate: '2024-12-05',
-                        dueDate: '2025-01-05',
-                        supplierName: 'PROVEEDOR TECNOLÓGICO S.A.S',
-                        supplierTaxId: '900.123.456',
-                        customerName: 'Tu Empresa',
-                        customerTaxId: '900.608.626',
-                        total: 2975000,
-                        subtotal: 2500000,
-                        taxes: 475000,
-                        reteFuente: 62500,
-                        docType: 'Factura Electrónica De Venta',
-                        paymentMeans: 'Crédito',
-                        metadata: { cufe: '6eb3758d...', number: 'SETP-99000213' },
-                        lines: [{ description: 'Servicios Cloud', qty: 1, price: 2500000, discount: 0, total: 2500000 }]
-                    },
-                    {
-                        id: 'FE-5501',
-                        issueDate: '2024-12-07',
-                        dueDate: '2024-12-07',
-                        supplierName: 'DISTRIBUIDORA DE PAPELERÍA LTDA',
-                        supplierTaxId: '800.111.222',
-                        customerName: 'Tu Empresa',
-                        customerTaxId: '900.608.626',
-                        total: 150000,
-                        subtotal: 126050,
-                        taxes: 23950,
-                        docType: 'Factura Electrónica De Venta',
-                        paymentMeans: 'Contado',
-                        metadata: { cufe: 'a1b2c3...', number: 'FE-5501' },
-                        lines: [{ description: 'Resma Papel Bond', qty: 10, price: 12605, discount: 0, total: 126050 }]
-                    }
-                ]
-            };
+        // Set download path
+        const downloadPath = path.join(process.cwd(), 'downloads');
+        if (!fs.existsSync(downloadPath)) {
+            fs.mkdirSync(downloadPath, { recursive: true });
         }
 
-        return { success: true, documents };
+        const client = await page.target().createCDPSession();
+        await client.send('Page.setDownloadBehavior', {
+            behavior: 'allow',
+            downloadPath: downloadPath
+        });
+
+        // Navigate to DIAN with token
+        console.log('🔐 Authenticating with DIAN token...');
+        await page.goto(tokenUrl, {
+            waitUntil: 'networkidle2',
+            timeout: 60000
+        });
+
+        console.log('⏳ Waiting for page to load...');
+        await page.waitForTimeout(5000);
+
+        // Take screenshot for debugging
+        const debugScreenshot = path.join(downloadPath, 'dian-step1-auth.png');
+        await page.screenshot({ path: debugScreenshot });
+        console.log('📸 Screenshot saved:', debugScreenshot);
+
+        // Look for "Documentos" or export option
+        console.log('🔍 Looking for Documentos/Export menu...');
+
+        // Try to find and click "Documentos" link
+        const documentosLink = await page.$('a:has-text("Documentos"), a:has-text("Documents")');
+        if (documentosLink) {
+            console.log('📄 Found Documentos link, clicking...');
+            await documentosLink.click();
+            await page.waitForTimeout(3000);
+        }
+
+        // Look for "Recibidos" or "Received" documents
+        console.log('📥 Looking for Recibidos section...');
+        const recibidosLink = await page.$('a:has-text("Recibidos"), button:has-text("Recibidos")');
+        if (recibidosLink) {
+            console.log('✅ Found Recibidos, clicking...');
+            await recibidosLink.click();
+            await page.waitForTimeout(3000);
+        }
+
+        // Look for Export/Exportar button
+        console.log('📊 Looking for Export Excel button...');
+        const exportButton = await page.$('button:has-text("Exportar"), button:has-text("Export"), a:has-text("Exportar Excel")');
+
+        if (exportButton) {
+            console.log('🖱️ Found Export button, clicking...');
+            await exportButton.click();
+            await page.waitForTimeout(2000);
+
+            // Look for confirmation modal "SI" button
+            console.log('✔️ Looking for confirmation button...');
+            const confirmButton = await page.$('button:has-text("SI"), button:has-text("Sí"), button:has-text("Yes"), button:has-text("Confirmar")');
+
+            if (confirmButton) {
+                console.log('✅ Found confirmation button, clicking...');
+                await confirmButton.click();
+
+                // Wait for download to start
+                console.log('⏬ Waiting for download to complete...');
+                await page.waitForTimeout(10000);
+
+                // Look for downloaded ZIP file
+                const files = fs.readdirSync(downloadPath);
+                const zipFile = files.find(f => f.endsWith('.zip'));
+
+                if (zipFile) {
+                    console.log('📦 Found downloaded ZIP:', zipFile);
+                    const zipPath = path.join(downloadPath, zipFile);
+                    const zipBuffer = fs.readFileSync(zipPath);
+
+                    // Extract Excel from ZIP
+                    const zip = new AdmZip(zipBuffer);
+                    const entries = zip.getEntries();
+
+                    let excelBuffer: Buffer | null = null;
+                    for (const entry of entries) {
+                        if (entry.entryName.endsWith('.xlsx')) {
+                            console.log('📊 Found Excel in ZIP:', entry.entryName);
+                            excelBuffer = entry.getData();
+                            break;
+                        }
+                    }
+
+                    await browser.close();
+
+                    if (!excelBuffer) {
+                        return {
+                            success: false,
+                            message: 'ZIP descargado pero no contiene archivo Excel',
+                            documents: []
+                        };
+                    }
+
+                    // Parse Excel
+                    console.log('🔄 Parsing Excel...');
+                    const documents = await parseDianExcel(excelBuffer);
+
+                    console.log(`✅ Parsed ${documents.length} documents`);
+
+                    // Clean up
+                    fs.unlinkSync(zipPath);
+
+                    return {
+                        success: true,
+                        message: `Se extrajeron ${documents.length} documentos de la DIAN`,
+                        documents
+                    };
+
+                } else {
+                    await browser.close();
+                    return {
+                        success: false,
+                        message: 'No se descargó ningún archivo ZIP. Verifica que tengas documentos disponibles.',
+                        documents: []
+                    };
+                }
+
+            } else {
+                console.warn('⚠️ No se encontró botón de confirmación');
+            }
+        } else {
+            console.warn('⚠️ No se encontró botón de exportación');
+        }
+
+        await browser.close();
+
+        return {
+            success: false,
+            message: 'No se pudo automatizar la descarga. La estructura de la página de la DIAN puede haber cambiado.',
+            documents: []
+        };
 
     } catch (error: any) {
-        console.error('DIAN Scraping Error:', error.message);
-        return { success: false, message: 'Error conectando con DIAN: ' + error.message, documents: [] };
+        console.error('❌ Puppeteer Error:', error.message);
+        console.error(error.stack);
+
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        return {
+            success: false,
+            message: `Error en automatización: ${error.message}`,
+            documents: []
+        };
     }
 }

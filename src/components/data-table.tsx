@@ -24,7 +24,10 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TableSkeleton } from '@/components/table-skeleton';
+import { FileX, Search } from 'lucide-react';
 import React from 'react';
+import { cn } from '@/lib/utils';
 
 interface DataTableFilter {
   id: string;
@@ -40,6 +43,8 @@ interface DataTableProps<TData, TValue> {
   rowSelection?: RowSelectionState;
   setRowSelection?: React.Dispatch<React.SetStateAction<RowSelectionState>>;
   canEdit?: boolean;
+  emptyMessage?: string;
+  emptyIcon?: React.ReactNode;
 }
 
 export function DataTable<TData, TValue>({
@@ -49,7 +54,9 @@ export function DataTable<TData, TValue>({
   filters = [],
   rowSelection = {},
   setRowSelection,
-  canEdit = true, // Default to true for backward compatibility
+  canEdit = true,
+  emptyMessage = 'No se encontraron resultados.',
+  emptyIcon,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -66,7 +73,7 @@ export function DataTable<TData, TValue>({
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
     onRowSelectionChange: setRowSelection,
-    enableRowSelection: canEdit, // Disable row selection if user can't edit
+    enableRowSelection: canEdit,
     state: {
       sorting,
       columnFilters,
@@ -106,7 +113,10 @@ export function DataTable<TData, TValue>({
                 <TableRow key={headerGroup.id} className="hover:bg-transparent border-b border-border">
                   {headerGroup.headers.map((header) => {
                     return (
-                      <TableHead key={header.id} className="bg-muted/50 font-semibold">
+                      <TableHead
+                        key={header.id}
+                        className="bg-muted/30 font-semibold text-foreground h-12"
+                      >
                         {header.isPlaceholder
                           ? null
                           : flexRender(
@@ -120,15 +130,25 @@ export function DataTable<TData, TValue>({
               ))}
             </TableHeader>
             <TableBody>
-              {table.getRowModel().rows?.length ? (
+              {isLoading ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={columns.length} className="p-0">
+                    <TableSkeleton rows={5} columns={columns.length} />
+                  </TableCell>
+                </TableRow>
+              ) : table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    className="hover:bg-muted/50 transition-colors border-b border-border/50 last:border-0"
+                    className={cn(
+                      "group hover:bg-muted/50 transition-colors duration-150",
+                      "border-b border-border/50 last:border-0",
+                      row.getIsSelected() && "bg-muted/30"
+                    )}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="py-4">
+                      <TableCell key={cell.id} className="py-4 px-6">
                         {flexRender(
                           cell.column.columnDef.cell,
                           cell.getContext()
@@ -141,17 +161,16 @@ export function DataTable<TData, TValue>({
                 <TableRow className="hover:bg-transparent">
                   <TableCell
                     colSpan={columns.length}
-                    className="h-32 text-center"
+                    className="h-48 text-center"
                   >
-                    <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                      {isLoading ? (
-                        <>
-                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-                          <p className="text-sm">Cargando datos...</p>
-                        </>
-                      ) : (
-                        <p className="text-sm">No se encontraron resultados.</p>
-                      )}
+                    <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                      {emptyIcon || <FileX className="h-12 w-12 opacity-50" />}
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{emptyMessage}</p>
+                        <p className="text-xs">
+                          Intenta ajustar los filtros o agregar nuevos datos.
+                        </p>
+                      </div>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -184,6 +203,10 @@ export function DataTable<TData, TValue>({
           >
             Anterior
           </Button>
+          <div className="text-sm text-muted-foreground px-2">
+            Página {table.getState().pagination.pageIndex + 1} de{" "}
+            {table.getPageCount()}
+          </div>
           <Button
             variant="outline"
             size="sm"

@@ -27,3 +27,45 @@ export function yyyymmddFromYYYY_MM_DDslash(fecha: string): string {
     return fecha.replace(/\//g, '-');
   }
 }
+
+/**
+ * Simple fuzzy search - checks if query characters appear in order in text
+ */
+export function fuzzySearch(query: string, text: string): boolean {
+  if (!query) return true;
+  if (!text) return false;
+
+  const queryLower = query.toLowerCase();
+  const textLower = text.toLowerCase();
+
+  let queryIndex = 0;
+  for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
+    if (textLower[i] === queryLower[queryIndex]) {
+      queryIndex++;
+    }
+  }
+
+  return queryIndex === queryLower.length;
+}
+
+/**
+ * Debounce function - delays execution until after wait milliseconds have elapsed
+ */
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+
+  return function executedFunction(...args: Parameters<T>) {
+    const later = () => {
+      timeout = null;
+      func(...args);
+    };
+
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(later, wait);
+  };
+}

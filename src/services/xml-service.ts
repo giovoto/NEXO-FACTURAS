@@ -29,7 +29,7 @@ export type ParsedInvoice = {
   taxRegimen?: string;
   taxDetails?: Array<{ id: string; percent: number; amount: number; name: string }>;
   lines: Array<{ description: string; qty: number; price: number; disk: number; total: number }>;
-  metadata?: { cufe?: string, number?: string; qr?: string, profileId?: string };
+  metadata?: { cufe?: string, number?: string; qr?: string, profileId?: string; estado?: string; divisa?: string };
 };
 
 export function parseDianUBL(xml: string): ParsedInvoice {

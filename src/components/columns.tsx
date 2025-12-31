@@ -183,35 +183,92 @@ export const columns = ({ onStatusChange, canEdit }: GetColumnsProps): ColumnDef
   },
   {
     id: 'actions',
+    header: () => <div className="text-right">Acciones</div>,
     cell: ({ row }) => {
       const factura = row.original;
       if (!canEdit) return null;
 
       return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Abrir menú</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Aceptado')}>
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Marcar como Aceptado
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Rechazado')}>
-              <XCircle className="mr-2 h-4 w-4" />
-              Marcar como Rechazado
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Procesado')}>
-              <Hourglass className="mr-2 h-4 w-4" />
-              Marcar en Proceso
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center justify-end gap-2">
+          {/* Quick Actions - Visible on hover */}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                    onClick={() => {
+                      // TODO: Implement view action
+                      console.log('Ver factura:', factura.id);
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <span className="sr-only">Ver detalles</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Ver detalles</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                    onClick={() => {
+                      // TODO: Implement edit action
+                      console.log('Editar factura:', factura.id);
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      <path d="m15 5 4 4" />
+                    </svg>
+                    <span className="sr-only">Editar</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Editar comprobante</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Dropdown Menu - Always visible */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Abrir menú</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Cambiar Estado</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Aceptado')}>
+                <CheckCircle className="mr-2 h-4 w-4 text-success" />
+                Marcar como Aceptado
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Rechazado')}>
+                <XCircle className="mr-2 h-4 w-4 text-destructive" />
+                Marcar como Rechazado
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onStatusChange(factura.id as string, 'Procesado')}>
+                <Hourglass className="mr-2 h-4 w-4 text-warning" />
+                Marcar en Proceso
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )
     },
     enableSorting: false,

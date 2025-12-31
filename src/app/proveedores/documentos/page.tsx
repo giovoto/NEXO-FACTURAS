@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,37 @@ import { InvoiceViewer } from '@/components/dashboard/invoice-viewer';
 import { ParsedInvoice } from '@/services/xml-service';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { DianSyncButton } from './dian-sync-button';
+import { InvoiceTable } from './invoice-table';
+
 
 export default function DocumentosPage() {
     const { user, activeEmpresaId } = useAuth();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadResult, setUploadResult] = useState<{ success: boolean; message?: string; invoice?: ParsedInvoice } | null>(null);
+    const [dianInvoices, setDianInvoices] = useState<ParsedInvoice[]>([]);
+    const [syncMessage, setSyncMessage] = useState<string>('');
+
+    // Load invoices from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('dianInvoices');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                setDianInvoices(parsed);
+                console.log(`✅ Restored ${parsed.length} invoices from localStorage`);
+            } catch (e) {
+                console.error('Failed to parse saved invoices:', e);
+            }
+        }
+    }, []);
+
+    // Save invoices to localStorage whenever they change
+    useEffect(() => {
+        if (dianInvoices.length > 0) {
+            localStorage.setItem('dianInvoices', JSON.stringify(dianInvoices));
+            console.log(`💾 Saved ${dianInvoices.length} invoices to localStorage`);
+        }
+    }, [dianInvoices]);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -35,7 +61,12 @@ export default function DocumentosPage() {
             // Let's wrap in a simple function here or use FormData if actionImportZip expects it.
             // Actually actionImportZip signature is (token, empresaId, File). Next.js actions support passing FormData.
 
-            const res = await actionImportZip(token, activeEmpresaId, file);
+            const formData = new FormData();
+            formData.append('idToken', token);
+            formData.append('empresaId', activeEmpresaId);
+            formData.append('file', file);
+
+            const res = await actionImportZip(formData);
 
             if (res.success && res.invoice) {
                 setUploadResult({ success: true, invoice: res.invoice as ParsedInvoice });
@@ -101,15 +132,42 @@ export default function DocumentosPage() {
                                 </label>
                             </div>
 
-                            <div className="mt-6 flex flex-col items-center justify-center gap-3">
-                                <div className="text-xs text-muted-foreground uppercase tracking-widest font-semibold flex items-center gap-2">
-                                    <span className="h-px w-12 bg-border"></span>
-                                    O
-                                    <span className="h-px w-12 bg-border"></span>
-                                </div>
+                            {/* Instrucciones para descargar desde DIAN */}
+                            <Alert className="mt-6 bg-blue-50 border-blue-200">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                <AlertTitle className="text-blue-900">Sincronización Automática DIAN (Beta)</AlertTitle>
+                                <AlertDescription className="text-blue-800 text-sm space-y-2">
+                                    <p>Prueba la sincronización automática usando el token de la DIAN:</p>
+                                    <DianSyncButton onSyncResult={(result) => {
+                                        if (result.success && result.documents) {
+                                            setDianInvoices(result.documents);
+                                            setSyncMessage(result.message || '');
+                                        }
+                                    }} />
 
-                                <DianSyncButton onInvoiceFound={(invoice) => setUploadResult({ success: true, invoice })} />
-                            </div>
+                                    {/* Success message after sync */}
+                                    {dianInvoices.length > 0 && (
+                                        <Alert className="mt-4 bg-green-50 border-green-200">
+                                            <CheckCircle className="h-4 w-4 text-green-600" />
+                                            <AlertTitle className="text-green-900">Sincronización Exitosa</AlertTitle>
+                                            <AlertDescription className="text-green-800">
+                                                {syncMessage} - {dianInvoices.length} facturas cargadas. Ve a la pestaña "Historial" para verlas todas.
+                                            </AlertDescription>
+                                        </Alert>
+                                    )}
+
+                                    <div className="mt-4 pt-4 border-t border-blue-300">
+                                        <p className="font-medium mb-2">O descarga manualmente:</p>
+                                        <ol className="list-decimal list-inside space-y-1">
+                                            <li>Ingresa al <a href="https://catalogo-vpfe.dian.gov.co" target="_blank" rel="noopener noreferrer" className="underline font-medium">portal de la DIAN</a></li>
+                                            <li>Inicia sesión con tu certificado digital o usuario</li>
+                                            <li>Ve a "Documentos Recibidos" o "Facturas Recibidas"</li>
+                                            <li>Selecciona el rango de fechas y descarga el archivo ZIP</li>
+                                            <li>Sube el archivo ZIP aquí para procesarlo automáticamente</li>
+                                        </ol>
+                                    </div>
+                                </AlertDescription>
+                            </Alert>
 
                             {uploadResult && !uploadResult.success && (
                                 <Alert variant="destructive" className="mt-6">
@@ -158,30 +216,18 @@ export default function DocumentosPage() {
                             </div>
                             <Button
                                 onClick={async () => {
-                                    // MOCK DATA PARA EXPORTACIÓN (Ya que aún no hay persistencia real conectada aquí)
-                                    // En producción, esto tomaría 'documentsList' del estado o backend
-                                    const mockExportData = [
-                                        uploadResult?.invoice || {
-                                            id: 'FE-1001',
-                                            issueDate: '2024-12-08',
-                                            total: 1190000,
-                                            subtotal: 1000000,
-                                            taxes: 190000,
-                                            reteFuente: 35000,
-                                            reteIVA: 0,
-                                            reteICA: 9660,
-                                            supplierName: 'Digital Solutions S.A.S',
-                                            supplierTaxId: '901.555.555',
-                                            customerName: 'Tu Empresa SAS',
-                                            customerTaxId: '900.222.222',
-                                            docType: 'Factura Electrónica De Venta',
-                                            paymentMeans: 'Contado',
-                                            metadata: { cufe: 'd3bb...555', number: 'FE-1001' }
-                                        }
-                                    ];
+                                    // Export DIAN invoices if available, otherwise use mock
+                                    const dataToExport = dianInvoices.length > 0
+                                        ? dianInvoices
+                                        : [uploadResult?.invoice].filter(Boolean);
+
+                                    if (dataToExport.length === 0) {
+                                        alert('No hay facturas para exportar. Sincroniza con la DIAN primero.');
+                                        return;
+                                    }
 
                                     const { exportInvoicesToExcel } = await import('@/services/excel-service');
-                                    await exportInvoicesToExcel(mockExportData as any, 'Reporte_DIAN.xlsx');
+                                    await exportInvoicesToExcel(dataToExport as any, 'Reporte_DIAN.xlsx');
                                 }}
                                 variant="outline"
                                 className="gap-2 text-green-700 border-green-200 hover:bg-green-50"
@@ -191,11 +237,7 @@ export default function DocumentosPage() {
                             </Button>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-center py-10 text-slate-500">
-                                <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                <p>No hay documentos en el historial aún.</p>
-                                <p className="text-sm mt-2">(Prueba el botón "Exportar" para ver el reporte generado con datos de ejemplo)</p>
-                            </div>
+                            <InvoiceTable invoices={dianInvoices} />
                         </CardContent>
                     </Card>
                 </TabsContent>

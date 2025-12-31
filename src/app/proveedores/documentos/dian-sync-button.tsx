@@ -9,10 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 interface DianSyncButtonProps {
-    onInvoiceFound?: (invoice: any) => void;
+    onSyncResult?: (result: {
+        success: boolean;
+        documents?: any[];
+        message?: string
+    }) => void;
 }
 
-export function DianSyncButton({ onInvoiceFound }: DianSyncButtonProps) {
+export function DianSyncButton({ onSyncResult }: DianSyncButtonProps) {
     const { user, activeEmpresaId } = useAuth();
     const [isSyncing, setIsSyncing] = useState(false);
     const [result, setResult] = useState<'success' | 'error' | null>(null);
@@ -61,8 +65,12 @@ export function DianSyncButton({ onInvoiceFound }: DianSyncButtonProps) {
             if (actionResult.success) {
                 setResult('success');
                 setTimeout(() => {
-                    if (onInvoiceFound && actionResult.documents) {
-                        (actionResult.documents as any[]).forEach((doc: any) => onInvoiceFound(doc));
+                    if (onSyncResult) {
+                        onSyncResult({
+                            success: true,
+                            documents: actionResult.documents,
+                            message: actionResult.message
+                        });
                     }
                 }, 500);
             } else {
