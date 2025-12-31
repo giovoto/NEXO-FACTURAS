@@ -20,7 +20,6 @@ export type DatoContable = {
 
 export async function getParamsAction(defaultParams: DatoContable[]): Promise<DatoContable[]> {
     try {
-        // Get current user's session
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -33,12 +32,25 @@ export async function getParamsAction(defaultParams: DatoContable[]): Promise<Da
             return defaultParams;
         }
 
-        // Try to get parameters from users table
-        // This assumes there's a parameters column (JSONB) in users table
-        // If not, we'll need to create a separate config table
+        const { data, error } = await supabase
+            .from('users')
+            .select('parameters')
+            .eq('id', userId)
+            .single();
 
-        // For now, return default params
-        // TODO: Implement when parameters field is added to schema
+        if (error || !data || !data.parameters) {
+            return defaultParams;
+        }
+
+        // Parse parameters from JSONB
+        const params = data.parameters as any;
+        if (Array.isArray(params) && params.length > 0) {
+            // Validate structure roughly
+            if ('id' in params[0] && 'titulo' in params[0]) {
+                return params as DatoContable[];
+            }
+        }
+
         return defaultParams;
 
     } catch (error: any) {
@@ -49,7 +61,6 @@ export async function getParamsAction(defaultParams: DatoContable[]): Promise<Da
 
 export async function saveParamsAction(params: DatoContable[]) {
     try {
-        // Get current user's session
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -62,9 +73,14 @@ export async function saveParamsAction(params: DatoContable[]) {
             throw new Error('Usuario no encontrado en base de datos');
         }
 
-        // Save parameters
-        // TODO: Implement when parameters field is added to schema
-        // For now, this is a stub
+        const { error } = await supabase
+            .from('users')
+            .update({ parameters: params as any }) // Cast to any to satisfy Json type
+            .eq('id', userId);
+
+        if (error) {
+            throw new Error(`Error saving parameters: ${error.message}`);
+        }
 
         revalidatePath('/configuracion');
     } catch (error: any) {

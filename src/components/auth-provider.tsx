@@ -45,11 +45,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [isAuthLoading, setIsAuthLoading] = useState(true);
 
     const [activeEmpresaId, setActiveEmpresaId] = useState<string | null>(null);
+    // Ref to track activeEmpresaId without triggering dependency changes in loadUserData
+    const activeEmpresaIdRef = useMemo(() => ({ current: activeEmpresaId }), [activeEmpresaId]);
+
     const [userEmpresas, setUserEmpresas] = useState<Empresa[]>([]);
 
     const [facturas, setFacturas] = useState<Factura[]>([]);
     const [isFacturasLoading, setIsFacturasLoading] = useState(true);
     const { addLog } = useLogs();
+
+    // Safety timeout to prevent infinite loading state
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (isAuthLoading) {
+                console.warn('[AuthProvider] Forced loading timeout trigger');
+                setIsAuthLoading(false);
+            }
+        }, 8000);
+        return () => clearTimeout(timer);
+    }, [isAuthLoading]);
 
     const loadUserData = useCallback(async (currentUser: User) => {
         console.log('[AuthProvider] Loading user data for:', currentUser.email);
@@ -117,9 +131,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setUserEmpresas(empresasData);
 
                 // Establecer empresa activa
-                const currentActiveId = activeEmpresaId &&
-                    userEmpresasData.some(e => e.empresa_id === activeEmpresaId)
-                    ? activeEmpresaId
+                // Use ref current value to check if we have a match
+                const currentId = activeEmpresaIdRef.current;
+
+                const currentActiveId = currentId &&
+                    userEmpresasData.some(e => e.empresa_id === currentId)
+                    ? currentId
                     : userEmpresasData[0].empresa_id;
 
                 setActiveEmpresaId(currentActiveId);
@@ -153,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('[AuthProvider] Setting isAuthLoading to false');
             setIsAuthLoading(false);
         }
-    }, [addLog, activeEmpresaId]);
+    }, [addLog]); // Removed activeEmpresaId from deps
 
     const switchEmpresa = useCallback(async (newEmpresaId: string) => {
         if (newEmpresaId !== activeEmpresaId && user) {

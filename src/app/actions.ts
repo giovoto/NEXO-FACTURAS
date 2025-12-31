@@ -32,18 +32,29 @@ async function getCurrentUserId(): Promise<string> {
 // FACTURAS CRUD
 // ============================================
 
+import { unstable_cache } from 'next/cache';
+
 export async function getFacturasAction(empresaId: string): Promise<Factura[]> {
     try {
-        const { data: facturas, error } = await supabase
-            .from('facturas')
-            .select('*')
-            .eq('empresa_id', empresaId)
-            .order('issue_date', { ascending: false });
+        const getFacturasCached = unstable_cache(
+            async (id: string) => {
+                const { data: facturas, error } = await supabase
+                    .from('facturas')
+                    .select('*')
+                    .eq('empresa_id', id)
+                    .order('issue_date', { ascending: false });
 
-        if (error) {
-            console.error('Error fetching facturas:', error);
-            throw new Error(`Error al obtener facturas: ${error.message}`);
-        }
+                if (error) throw error;
+                return facturas;
+            },
+            [`facturas-${empresaId}`],
+            {
+                revalidate: 60, // Cache for 60 seconds
+                tags: [`facturas-${empresaId}`]
+            }
+        );
+
+        const facturas = await getFacturasCached(empresaId);
 
         // Map database fields to Factura interface
         return (facturas || []).map(f => ({
@@ -76,6 +87,8 @@ export async function getFacturasAction(empresaId: string): Promise<Factura[]> {
         } as Factura));
     } catch (error: any) {
         console.error(`Error al cargar facturas para la empresa ${empresaId}`, error);
+        // Fallback to direct call on error? Or just throw.
+        // For now, sticking to standard behavior
         throw new Error(`Error al obtener facturas: ${error.message}`);
     }
 }

@@ -19,6 +19,7 @@ export interface Database {
                     email: string
                     display_name: string | null
                     google_refresh_token: string | null
+                    parameters: Json | null
                     created_at: string
                     updated_at: string
                 }
@@ -28,6 +29,7 @@ export interface Database {
                     email: string
                     display_name?: string | null
                     google_refresh_token?: string | null
+                    parameters?: Json | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -37,6 +39,7 @@ export interface Database {
                     email?: string
                     display_name?: string | null
                     google_refresh_token?: string | null
+                    parameters?: Json | null
                     created_at?: string
                     updated_at?: string
                 }
