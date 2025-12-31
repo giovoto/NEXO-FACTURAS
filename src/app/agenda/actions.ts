@@ -1,89 +1,142 @@
-
 'use server';
 
-import { db } from '@/lib/firebase-admin';
-import { getAuthenticatedUser } from '@/lib/firebase-admin';
+import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
-import type { Contacto } from '@/lib/types';
-import { FieldValue } from 'firebase-admin/firestore';
+import type { Evento, Contacto } from '@/lib/types';
 
-// --- Contact Actions ---
+// ============================================
+// EVENTOS (AGENDA) CRUD
+// ============================================
 
-const getContactsCol = (empresaId: string) => db.collection('empresas').doc(empresaId).collection('contacts');
+export async function getEventosAction(empresaId: string): Promise<Evento[]> {
+    try {
+        const { data: eventos, error } = await supabase
+            .from('eventos')
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .order('fecha_inicio', { ascending: true });
 
-export async function getContactsAction(idToken: string, empresaId: string): Promise<Contacto[]> {
-    await getAuthenticatedUser(idToken, empresaId); // Viewers can see contacts
-    const snapshot = await getContactsCol(empresaId).orderBy('proveedor').get();
-    
-    if (snapshot.empty) {
-        console.log(`No contacts found for company ${empresaId}, creating initial contact.`);
-        const initialContact = {
-            proveedor: 'Proveedor de Ejemplo S.A.S',
-            identificacion: '900123456-7',
-            email: 'ejemplo@proveedor.com',
-            telefono: '3001234567',
+        if (error) {
+            throw new Error(`Error fetching eventos: ${error.message}`);
+        }
+
+        return (eventos || []).map(e => ({
+            id: e.id,
+            titulo: e.titulo,
+            descripcion: e.descripcion,
+            fechaInicio: e.fecha_inicio,
+            fechaFin: e.fecha_fin,
+            ubicacion: e.ubicacion,
+            tipo: e.tipo,
+            estado: e.estado,
+        })) as Evento[];
+    } catch (error: any) {
+        console.error('Error in getEventosAction:', error);
+        throw error;
+    }
+}
+
+export async function saveEventoAction(empresaId: string, data: Omit<Evento, 'id'> | Evento) {
+    try {
+        if ('id' in data && data.id) {
+            // Update
+            const { id, ...updateData } = data;
+            const { error } = await supabase
+                .from('eventos')
+                .update({
+                    titulo: updateData.titulo,
+                    descripcion: updateData.descripcion,
+                    fecha_inicio: updateData.fechaInicio,
+                    fecha_fin: updateData.fechaFin,
+                    ubicacion: updateData.ubicacion,
+                    tipo: updateData.tipo,
+                    estado: updateData.estado,
+                })
+                .eq('id', id)
+                .eq('empresa_id', empresaId);
+
+            if (error) {
+                throw new Error(`Error updating evento: ${error.message}`);
+            }
+        } else {
+            // Create
+            const { error } = await supabase
+                .from('eventos')
+                .insert({
+                    empresa_id: empresaId,
+                    titulo: data.titulo,
+                    descripcion: data.descripcion,
+                    fecha_inicio: data.fechaInicio,
+                    fecha_fin: data.fechaFin,
+                    ubicacion: data.ubicacion,
+                    tipo: data.tipo,
+                    estado: data.estado || 'pendiente',
+                });
+
+            if (error) {
+                throw new Error(`Error creating evento: ${error.message}`);
+            }
+        }
+
+        revalidatePath('/agenda');
+    } catch (error: any) {
+        console.error('Error in saveEventoAction:', error);
+        throw error;
+    }
+}
+
+export async function deleteEventoAction(empresaId: string, eventoId: string) {
+    try {
+        const { error } = await supabase
+            .from('eventos')
+            .delete()
+            .eq('id', eventoId)
+            .eq('empresa_id', empresaId);
+
+        if (error) {
+            throw new Error(`Error deleting evento: ${error.message}`);
+        }
+
+        revalidatePath('/agenda');
+    } catch (error: any) {
+        console.error('Error in deleteEventoAction:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// CONTACTOS (PROVEEDORES) - Helper para Facturas
+// ============================================
+
+// Nota: contactos no están en el schema actual de Supabase
+// Esta función retorna un contacto ficticio por ahora
+// TODO: Agregar tabla de contactos/proveedores si es necesaria
+
+export async function findOrCreateContactAction(
+    empresaId: string,
+    data: { identificacion: string; proveedor: string }
+): Promise<Contacto> {
+    try {
+        // Por ahora, retornamos el contacto tal cual
+        // En el futuro, se puede crear una tabla 'contactos' en Supabase
+        return {
+            id: data.identificacion,
+            identificacion: data.identificacion,
+            proveedor: data.proveedor,
         };
-        const docRef = await getContactsCol(empresaId).add(initialContact);
-        return [{ id: docRef.id, ...initialContact }];
+    } catch (error: any) {
+        console.error('Error in findOrCreateContactAction:', error);
+        throw error;
     }
-    
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contacto));
 }
 
-export async function saveContactAction(idToken: string, empresaId: string, data: Omit<Contacto, 'id' | 'userId'> | Omit<Contacto, 'userId'>) {
-    const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-    if ('id' in data) {
-        // Update
-        const { id, ...updateData } = data;
-        await getContactsCol(empresaId).doc(id).update(updateData);
-    } else {
-        // Create
-        await getContactsCol(empresaId).add(data);
-    }
-    revalidatePath('/agenda');
-}
-
-
-export async function deleteContactAction(idToken: string, empresaId: string, contactId: string) {
-    const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-    await getContactsCol(empresaId).doc(contactId).delete();
-    revalidatePath('/agenda');
-}
-
-export async function findOrCreateContactAction(idToken: string, empresaId: string, contactData: {
-    identificacion: string,
-    proveedor: string,
-    email?: string | null,
-    telefono?: string | null,
-}): Promise<Contacto> {
-    await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-    const contactsCol = getContactsCol(empresaId);
-
-    const snapshot = await contactsCol.where('identificacion', '==', contactData.identificacion).limit(1).get();
-
-    if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        const existingContact = { id: doc.id, ...doc.data() } as Contacto;
-        
-        // Update with new info if provided
-        const updateData: Partial<Contacto> = {};
-        if (contactData.proveedor && contactData.proveedor !== existingContact.proveedor) {
-            updateData.proveedor = contactData.proveedor;
-        }
-        if (contactData.email && contactData.email !== existingContact.email) {
-            updateData.email = contactData.email;
-        }
-        if (contactData.telefono && contactData.telefono !== existingContact.telefono) {
-            updateData.telefono = contactData.telefono;
-        }
-
-        if (Object.keys(updateData).length > 0) {
-            await doc.ref.update(updateData);
-        }
-
-        return { ...existingContact, ...updateData };
-    } else {
-        const docRef = await contactsCol.add(contactData);
-        return { id: docRef.id, ...contactData };
+export async function getContactosAction(empresaId: string): Promise<Contacto[]> {
+    try {
+        // TODO: Implementar cuando se agregue tabla de contactos
+        // Por ahora retornamos array vacío
+        return [];
+    } catch (error: any) {
+        console.error('Error in getContactosAction:', error);
+        throw error;
     }
 }

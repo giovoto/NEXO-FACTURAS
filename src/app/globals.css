@@ -7,48 +7,48 @@
     /* Backgrounds - Más limpios y claros */
     --background: 0 0% 100%;
     --foreground: 222 47% 11%;
-    
+
     /* Cards - Fondo blanco puro con sombras sutiles */
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    
+
     /* Popovers */
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    
-    /* Primary - Azul vibrante inspirado en Payana */
-    --primary: 217 91% 60%;
+
+    /* Primary - Verde vibrante #48dd0a */
+    --primary: 100 87% 45%;
     --primary-foreground: 0 0% 100%;
-    
-    /* Secondary - Azul muy claro para backgrounds */
-    --secondary: 217 91% 95%;
-    --secondary-foreground: 217 91% 25%;
-    
+
+    /* Secondary - Verde claro para backgrounds */
+    --secondary: 100 87% 95%;
+    --secondary-foreground: 100 87% 25%;
+
     /* Muted - Gris muy claro para fondos sutiles */
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
-    
+
     /* Accent - Verde para estados positivos */
     --accent: 142 76% 36%;
     --accent-foreground: 0 0% 100%;
-    
+
     /* Destructive - Rojo para errores */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    
+
     /* Warning - Naranja para alertas */
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    
-    /* Success - Verde para confirmaciones */
-    --success: 142 76% 36%;
+
+    /* Success - Verde #48dd0a para confirmaciones */
+    --success: 100 87% 45%;
     --success-foreground: 0 0% 100%;
-    
+
     /* Borders - Más sutiles */
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 217 91% 60%;
-    
+    --ring: 100 87% 45%;
+
     /* Border radius más moderado */
     --radius: 0.75rem;
 
@@ -61,43 +61,43 @@
     /* Backgrounds - Dark mode elegante */
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
-    
+
     /* Cards */
     --card: 222 47% 15%;
     --card-foreground: 210 40% 98%;
-    
+
     /* Popovers */
     --popover: 222 47% 15%;
     --popover-foreground: 210 40% 98%;
-    
+
     /* Primary - Azul más claro para dark mode */
     --primary: 217 91% 65%;
     --primary-foreground: 222 47% 11%;
-    
+
     /* Secondary */
     --secondary: 217 50% 25%;
     --secondary-foreground: 217 91% 85%;
-    
+
     /* Muted */
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-    
+
     /* Accent - Verde ajustado para dark */
     --accent: 142 76% 45%;
     --accent-foreground: 222 47% 11%;
-    
+
     /* Destructive */
     --destructive: 0 84% 65%;
     --destructive-foreground: 0 0% 100%;
-    
+
     /* Warning */
     --warning: 38 92% 55%;
     --warning-foreground: 222 47% 11%;
-    
+
     /* Success */
     --success: 142 76% 45%;
     --success-foreground: 222 47% 11%;
-    
+
     /* Borders */
     --border: 217 33% 25%;
     --input: 217 33% 25%;
@@ -109,12 +109,14 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
 }
 
 @layer components {
+
   /* Sidebar transition */
   .sidebar-transition {
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -170,11 +172,11 @@
     @apply absolute content-[''] h-[18px] w-[18px] left-[3px] bottom-[3px] bg-white transition-all duration-300 rounded-full;
   }
 
-  input:checked + .slider {
+  input:checked+.slider {
     @apply bg-primary;
   }
 
-  input:checked + .slider:before {
+  input:checked+.slider:before {
     @apply translate-x-6;
   }
 
@@ -265,6 +267,7 @@
 }
 
 @layer utilities {
+
   /* Custom utilities */
   .transition-smooth {
     transition: all var(--transition-speed) ease;
