@@ -50,10 +50,11 @@ interface InviteUserFormProps {
   empresaId: string;
 }
 
-// Helper to get ID token
+// Helper to get session token
 async function getIdToken(user: User | null): Promise<string> {
-    if (!user) return '';
-    return user.getIdToken();
+  // With Supabase, we don't need getIdToken, the session is managed automatically
+  // This is kept for compatibility but returns empty string
+  return '';
 }
 
 
@@ -77,18 +78,18 @@ export const InviteUserForm = memo(function InviteUserForm({ isOpen, onClose, on
     setError('');
 
     try {
-        const idToken = await getIdToken(user);
-        const result = await inviteUserAction(idToken, empresaId, data.email, data.rol as EmpresaRole);
-        if (result.success) {
-            onSuccess();
-            onClose();
-        } else {
-            setError(result.message);
-        }
+      const idToken = await getIdToken(user);
+      const result = await inviteUserAction(idToken, empresaId, data.email, data.rol as EmpresaRole);
+      if (result.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setError(result.message);
+      }
     } catch (err: any) {
-        setError(err.message || 'Ocurrió un error inesperado.');
+      setError(err.message || 'Ocurrió un error inesperado.');
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -103,7 +104,7 @@ export const InviteUserForm = memo(function InviteUserForm({ isOpen, onClose, on
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
-             <FormField
+            <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
@@ -122,7 +123,7 @@ export const InviteUserForm = memo(function InviteUserForm({ isOpen, onClose, on
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Rol en la Empresa</FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona un rol" />
@@ -139,12 +140,12 @@ export const InviteUserForm = memo(function InviteUserForm({ isOpen, onClose, on
               )}
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
-             <DialogFooter>
-                <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>Cancelar</Button>
-                <Button type="submit" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Añadir Usuario
-                </Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>Cancelar</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Añadir Usuario
+              </Button>
             </DialogFooter>
           </form>
         </Form>

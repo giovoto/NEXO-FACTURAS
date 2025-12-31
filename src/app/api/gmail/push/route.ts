@@ -1,14 +1,13 @@
 
-'use server';
-
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { actionImportZip } from '@/app/actions';
-import { getAuthenticatedUser } from '@/lib/firebase-admin';
+// import { getAuthenticatedUser } from '@/lib/firebase-admin';
 
 // App Hosting: fuerza runtime Node para usar googleapis, Buffer, etc.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic'; // Ensure it's not statically rendered
+
 
 // --- Funciones Auxiliares (Integradas en este archivo) ---
 
@@ -42,26 +41,26 @@ async function getGmailClient(): Promise<Gmail> {
  * para asociar la factura. Se necesita una estrategia de autenticación para webhooks.
  */
 async function processAttachment(bytes: Buffer, filename: string): Promise<boolean> {
-    try {
-        const file = new File([bytes], filename, { type: 'application/zip' });
-        
-        // TODO: Implementar una estrategia de autenticación segura para webhooks.
-        // Por ahora, esta acción no puede ejecutarse porque actionImportZip requiere
-        // un idToken de un usuario logueado. Se necesita un token de servicio o 
-        // asociar el email entrante a un usuario de la app.
-        // Simularemos el procesamiento para no bloquear el flujo.
-        
-        console.log(`[gmail/push] Archivo '${filename}' listo para ser procesado. Se necesita una estrategia de autenticación de usuario para llamar a actionImportZip.`);
-        
-        // --- DESCOMENTAR CUANDO HAYA ESTRATEGIA DE AUTENTICACIÓN ---
-        // const systemUserToken = await getSystemUserToken(); 
-        // await actionImportZip(systemUserToken, file);
-        
-        return true;
-    } catch (error) {
-        console.error(`[gmail/push] Error preparando el adjunto '${filename}' para procesamiento:`, error);
-        return false;
-    }
+  try {
+    const file = new File([bytes], filename, { type: 'application/zip' });
+
+    // TODO: Implementar una estrategia de autenticación segura para webhooks.
+    // Por ahora, esta acción no puede ejecutarse porque actionImportZip requiere
+    // un idToken de un usuario logueado. Se necesita un token de servicio o 
+    // asociar el email entrante a un usuario de la app.
+    // Simularemos el procesamiento para no bloquear el flujo.
+
+    console.log(`[gmail/push] Archivo '${filename}' listo para ser procesado. Se necesita una estrategia de autenticación de usuario para llamar a actionImportZip.`);
+
+    // --- DESCOMENTAR CUANDO HAYA ESTRATEGIA DE AUTENTICACIÓN ---
+    // const systemUserToken = await getSystemUserToken(); 
+    // await actionImportZip(systemUserToken, file);
+
+    return true;
+  } catch (error) {
+    console.error(`[gmail/push] Error preparando el adjunto '${filename}' para procesamiento:`, error);
+    return false;
+  }
 }
 
 
@@ -98,23 +97,23 @@ export async function processNewMessages(gmail: Gmail): Promise<number> {
           messageId: messageHeader.id,
           id: part.body.attachmentId,
         });
-        
+
         const data = attachmentResponse.data.data;
         if (data) {
-            const fileBuffer = Buffer.from(data, 'base64');
-            const success = await processAttachment(fileBuffer, part.filename);
-            if (success) processedCount++;
+          const fileBuffer = Buffer.from(data, 'base64');
+          const success = await processAttachment(fileBuffer, part.filename);
+          if (success) processedCount++;
         }
       }
     }
 
     // Marcar como leído para no procesarlo de nuevo
     await gmail.users.messages.modify({
-        userId: 'me',
-        id: messageHeader.id,
-        requestBody: {
-            removeLabelIds: ['UNREAD']
-        }
+      userId: 'me',
+      id: messageHeader.id,
+      requestBody: {
+        removeLabelIds: ['UNREAD']
+      }
     });
   }
 
@@ -130,26 +129,26 @@ export async function processNewMessages(gmail: Gmail): Promise<number> {
  */
 export async function POST(req: NextRequest) {
   console.log('[gmail/push] Notificación de Gmail recibida...');
-  
+
   try {
     const body = await req.json();
     console.log('[gmail/push] Payload de Pub/Sub:', body);
 
     if (!body.message || !body.message.data) {
-        console.warn('[gmail/push] Payload de Pub/Sub inválido. Ignorando.');
-        return NextResponse.json({ ok: true }); // Devolver 200 para que Pub/Sub no reintente
+      console.warn('[gmail/push] Payload de Pub/Sub inválido. Ignorando.');
+      return NextResponse.json({ ok: true }); // Devolver 200 para que Pub/Sub no reintente
     }
-    
+
     // El payload de Pub/Sub está codificado en Base64
     const payload = JSON.parse(Buffer.from(body.message.data, 'base64').toString('utf8')) as {
       emailAddress: string; historyId: string;
     };
     console.log('[gmail/push] Payload decodificado:', payload);
-    
+
     // Con el historyId, ahora procesamos los mensajes nuevos
     const gmail = await getGmailClient();
     const processedCount = await processNewMessages(gmail);
-    
+
     console.log(`[gmail/push] Proceso completado. Se procesaron ${processedCount} adjuntos.`);
 
     return NextResponse.json({ ok: true, message: `Proceso completado. ${processedCount} adjuntos procesados.` });

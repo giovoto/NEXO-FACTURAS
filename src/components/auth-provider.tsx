@@ -2,293 +2,329 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useMemo } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { User } from '@supabase/supabase-js';
+import { supabase, getUserId } from '@/lib/supabase';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { MessageSquare } from 'lucide-react';
-import { getFacturasAction, updateFacturaStatusAction, onUserCreateAction } from '@/app/actions';
+import { getFacturasAction, updateFacturaStatusAction } from '@/app/actions';
 import { useLogs } from '@/lib/logger';
 import { TourProvider } from '@/components/tour/tour-provider';
 import { UserRole, Empresa, EmpresaRole } from '@/lib/types';
-import { db } from '@/lib/firebase'; // Client-side db
-import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 
 const publicRoutes = ['/login', '/registro', '/reestablecer-clave', '/politica-de-privacidad', '/test-viewer'];
 
 export type Factura = {
-  id: string;
-  [key: string]: any;
+    id: string;
+    [key: string]: any;
 };
 
-
 interface AuthContextType {
-  user: User | null;
-  userRole: UserRole; // Global role (e.g., 'superadmin')
-  empresaRole: EmpresaRole; // Role within the active company
-  isAuthLoading: boolean;
-  facturas: Factura[];
-  setFacturas: React.Dispatch<React.SetStateAction<Factura[]>>;
-  isFacturasLoading: boolean;
-  reloadFacturas: (force?: boolean) => void;
-  handleStatusChange: (facturaId: string, newStatus: string) => void;
-  activeEmpresaId: string | null;
-  userEmpresas: Empresa[];
-  switchEmpresa: (empresaId: string) => void;
-  reloadAuth: () => void;
+    user: User | null;
+    userRole: UserRole;
+    empresaRole: EmpresaRole;
+    isAuthLoading: boolean;
+    facturas: Factura[];
+    setFacturas: React.Dispatch<React.SetStateAction<Factura[]>>;
+    isFacturasLoading: boolean;
+    reloadFacturas: (force?: boolean) => void;
+    handleStatusChange: (facturaId: string, newStatus: string) => void;
+    activeEmpresaId: string | null;
+    userEmpresas: Empresa[];
+    switchEmpresa: (empresaId: string) => void;
+    reloadAuth: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper to get ID token
-async function getIdToken(user: User | null, forceRefresh = false): Promise<string> {
-  if (!user) return '';
-  return user.getIdToken(forceRefresh);
-}
-
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
-  const [userRole, setUserRole] = useState<UserRole>('user');
-  const [empresaRole, setEmpresaRole] = useState<EmpresaRole>('viewer');
-  const [isAuthLoading, setIsAuthLoading] = useState(false); // Force false for mock to avoid loading screen lock
+    const router = useRouter();
+    const pathname = usePathname();
+    const [user, setUser] = useState<User | null>(null);
+    const [userRole, setUserRole] = useState<UserRole>('user');
+    const [empresaRole, setEmpresaRole] = useState<EmpresaRole>('viewer');
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-  const [activeEmpresaId, setActiveEmpresaId] = useState<string | null>(null);
-  const [userEmpresas, setUserEmpresas] = useState<Empresa[]>([]);
+    const [activeEmpresaId, setActiveEmpresaId] = useState<string | null>(null);
+    const [userEmpresas, setUserEmpresas] = useState<Empresa[]>([]);
 
-  const [facturas, setFacturas] = useState<Factura[]>([]);
-  const [isFacturasLoading, setIsFacturasLoading] = useState(true);
-  const { addLog } = useLogs();
+    const [facturas, setFacturas] = useState<Factura[]>([]);
+    const [isFacturasLoading, setIsFacturasLoading] = useState(true);
+    const { addLog } = useLogs();
 
-  const loadUserData = useCallback(async (currentUser: User) => {
-    setIsAuthLoading(true);
-    try {
-      await onUserCreateAction(currentUser.uid, currentUser.email, currentUser.displayName);
-      const idTokenResult = await currentUser.getIdTokenResult(true);
-      const globalRole = (idTokenResult.claims.role as UserRole) || 'user';
-      setUserRole(globalRole);
-      addLog('INFO', `Global user role detected: ${globalRole}`);
-
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const userEmpresasMap = userData.empresas || {};
-
-        if (Object.keys(userEmpresasMap).length > 0) {
-          const empresaIds = Object.keys(userEmpresasMap);
-          const empresasQuery = query(collection(db, 'empresas'), where('__name__', 'in', empresaIds));
-          const empresasSnapshot = await getDocs(empresasQuery);
-          const empresasData = empresasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Empresa));
-          setUserEmpresas(empresasData);
-
-          const currentActiveId = activeEmpresaId && empresaIds.includes(activeEmpresaId) ? activeEmpresaId : empresaIds[0];
-          setActiveEmpresaId(currentActiveId);
-          setEmpresaRole(userEmpresasMap[currentActiveId] || 'viewer');
-          addLog('INFO', `Active company set to ${currentActiveId} with role ${userEmpresasMap[currentActiveId]}`);
-        } else {
-          setUserEmpresas([]);
-          setActiveEmpresaId(null);
-          setEmpresaRole('viewer');
-        }
-      }
-    } catch (error) {
-      addLog('ERROR', 'Error fetching user roles and companies', error);
-      setUserRole('user');
-      setEmpresaRole('viewer');
-    } finally {
-      setIsAuthLoading(false);
-    }
-  }, [addLog, activeEmpresaId]);
-
-  const switchEmpresa = useCallback(async (newEmpresaId: string) => {
-    if (newEmpresaId !== activeEmpresaId && user) {
-      setIsFacturasLoading(true); // Show loading state while switching
-      setActiveEmpresaId(newEmpresaId);
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const newRole = userData.empresas?.[newEmpresaId] as EmpresaRole || 'viewer';
-        setEmpresaRole(newRole);
-        addLog('INFO', `Switched to company ${newEmpresaId} with role ${newRole}`);
-      }
-    }
-  }, [activeEmpresaId, user, addLog]);
-
-  const loadFacturas = useCallback(async (force = false) => {
-    if (!user || !activeEmpresaId) {
-      setFacturas([]);
-      setIsFacturasLoading(false);
-      return;
-    };
-
-    setIsFacturasLoading(true);
-    try {
-      addLog('INFO', `Buscando facturas para la empresa ${activeEmpresaId}...`);
-      const idToken = await getIdToken(user, force);
-      const data = await getFacturasAction(idToken, activeEmpresaId);
-      if (Array.isArray(data)) {
-        setFacturas(data);
-        addLog('SUCCESS', `Facturas cargadas: ${data.length}`);
-      }
-    } catch (error: any) {
-      if (String(error?.message).includes('id-token-expired')) {
-        addLog('INFO', 'Token expired, refreshing and retrying...');
+    const loadUserData = useCallback(async (currentUser: User) => {
+        setIsAuthLoading(true);
         try {
-          const freshIdToken = await getIdToken(user, true);
-          const data = await getFacturasAction(freshIdToken, activeEmpresaId);
-          if (Array.isArray(data)) {
-            setFacturas(data);
-            addLog('SUCCESS', `Facturas cargadas con éxito en el reintento: ${data.length}`);
-          }
-        } catch (retryError: any) {
-          addLog('ERROR', 'Error al cargar facturas en el reintento.', retryError);
+            addLog('INFO', `Loading user data for ${currentUser.email}`);
+
+            // Obtener el user_id de la tabla users usando auth_id
+            const userId = await getUserId(currentUser.id);
+
+            if (!userId) {
+                addLog('ERROR', 'User not found in users table');
+                setUserRole('user');
+                setEmpresaRole('viewer');
+                setIsAuthLoading(false);
+                return;
+            }
+
+            // Obtener las empresas del usuario desde user_empresas
+            const { data: userEmpresasData, error: empresasError } = await supabase
+                .from('user_empresas')
+                .select(`
+          empresa_id,
+          role,
+          empresas (
+            id,
+            nombre,
+            nit,
+            direccion,
+            telefono,
+            email
+          )
+        `)
+                .eq('user_id', userId);
+
+            if (empresasError) {
+                addLog('ERROR', 'Error fetching user empresas', empresasError);
+                setUserEmpresas([]);
+                setActiveEmpresaId(null);
+                setEmpresaRole('viewer');
+            } else if (userEmpresasData && userEmpresasData.length > 0) {
+                // Mapear los datos a la estructura esperada
+                const empresasData = userEmpresasData.map(item => ({
+                    id: item.empresa_id,
+                    ...(item.empresas as any)
+                })) as Empresa[];
+
+                setUserEmpresas(empresasData);
+
+                // Establecer empresa activa
+                const currentActiveId = activeEmpresaId &&
+                    userEmpresasData.some(e => e.empresa_id === activeEmpresaId)
+                    ? activeEmpresaId
+                    : userEmpresasData[0].empresa_id;
+
+                setActiveEmpresaId(currentActiveId);
+
+                // Establecer rol en la empresa activa
+                const activeEmpresaData = userEmpresasData.find(e => e.empresa_id === currentActiveId);
+                setEmpresaRole(activeEmpresaData?.role || 'viewer');
+
+                addLog('INFO', `Active company set to ${currentActiveId} with role ${activeEmpresaData?.role}`);
+            } else {
+                // Usuario no tiene empresas asignadas
+                setUserEmpresas([]);
+                setActiveEmpresaId(null);
+                setEmpresaRole('viewer');
+                addLog('INFO', 'User has no assigned companies');
+            }
+
+            // Por ahora, establecer userRole como 'user' (en el futuro se puede agregar campo de rol global)
+            setUserRole('user');
+
+        } catch (error) {
+            addLog('ERROR', 'Error fetching user roles and companies', error);
+            setUserRole('user');
+            setEmpresaRole('viewer');
+        } finally {
+            setIsAuthLoading(false);
         }
-      } else {
-        addLog('ERROR', 'Error al cargar facturas', error);
-      }
-    } finally {
-      setIsFacturasLoading(false);
-    }
-  }, [user, addLog, activeEmpresaId]);
+    }, [addLog, activeEmpresaId]);
 
-  useEffect(() => {
-    if (!auth) {
-      setIsAuthLoading(false); // Firebase not configured, stop loading
-      return;
-    }
-    // const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-    //   setUser(currentUser);
-    //   if (currentUser) {
-    //     await loadUserData(currentUser);
-    //   } else {
-    //     setUserRole('user');
-    //     setEmpresaRole('viewer');
-    //     setActiveEmpresaId(null);
-    //     setUserEmpresas([]);
-    //     setIsAuthLoading(false);
-    //   }
-    // });
-    // return () => unsubscribe();
+    const switchEmpresa = useCallback(async (newEmpresaId: string) => {
+        if (newEmpresaId !== activeEmpresaId && user) {
+            setIsFacturasLoading(true);
+            setActiveEmpresaId(newEmpresaId);
 
-    // MOCK USER IMPLEMENTATION
-    const mockUser = {
-      uid: 'mock-uid-123',
-      email: 'provisional@test.com',
-      displayName: 'Usuario Provisional',
-      emailVerified: true,
-      isAnonymous: false,
-      getIdToken: async () => 'mock-token',
-      getIdTokenResult: async () => ({ claims: { role: 'admin' } } as any),
-    } as unknown as User;
+            try {
+                const userId = await getUserId(user.id);
 
-    // Mock enterprise data
-    const mockEmpresas = [{ id: 'empresa-demo', name: 'Empresa Demo SAS', nit: '900123456' } as any];
+                if (userId) {
+                    // Obtener el nuevo rol
+                    const { data, error } = await supabase
+                        .from('user_empresas')
+                        .select('role')
+                        .eq('user_id', userId)
+                        .eq('empresa_id', newEmpresaId)
+                        .single();
 
-    // Set state in batch to avoid multiple renders
-    setUser(mockUser);
-    setUserRole('admin');
-    setEmpresaRole('admin');
-    setUserEmpresas(mockEmpresas);
-    setActiveEmpresaId('empresa-demo');
-    setIsAuthLoading(false);
+                    if (!error && data) {
+                        setEmpresaRole(data.role as EmpresaRole);
+                        addLog('INFO', `Switched to company ${newEmpresaId} with role ${data.role}`);
+                    }
+                }
+            } catch (error) {
+                addLog('ERROR', 'Error switching empresa', error);
+            }
+        }
+    }, [activeEmpresaId, user, addLog]);
 
-    return () => { };
-  }, []); // Empty dependency for mock init
+    const loadFacturas = useCallback(async (force = false) => {
+        if (!user || !activeEmpresaId) {
+            setFacturas([]);
+            setIsFacturasLoading(false);
+            return;
+        }
 
-  useEffect(() => {
-    if (user && !isAuthLoading && activeEmpresaId) {
-      loadFacturas(false);
-    }
-  }, [user?.uid, isAuthLoading, activeEmpresaId]);
+        setIsFacturasLoading(true);
+        try {
+            addLog('INFO', `Buscando facturas para la empresa ${activeEmpresaId}...`);
+            const data = await getFacturasAction(activeEmpresaId);
 
-  useEffect(() => {
-    if (isAuthLoading) return;
+            if (Array.isArray(data)) {
+                setFacturas(data);
+                addLog('SUCCESS', `Facturas cargadas: ${data.length}`);
+            }
+        } catch (error: any) {
+            addLog('ERROR', 'Error al cargar facturas', error);
+        } finally {
+            setIsFacturasLoading(false);
+        }
+    }, [user, addLog, activeEmpresaId]);
+
+    // Suscripción a cambios de autenticación de Supabase
+    useEffect(() => {
+        // Obtener sesión inicial
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                loadUserData(session.user);
+            } else {
+                setIsAuthLoading(false);
+            }
+        });
+
+        // Escuchar cambios de autenticación
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            console.log('Auth state changed:', _event);
+            setUser(session?.user ?? null);
+
+            if (session?.user) {
+                await loadUserData(session.user);
+            } else {
+                setUserRole('user');
+                setEmpresaRole('viewer');
+                setActiveEmpresaId(null);
+                setUserEmpresas([]);
+                setIsAuthLoading(false);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, [loadUserData]);
+
+    // Cargar facturas cuando cambie la empresa activa
+    useEffect(() => {
+        if (user && !isAuthLoading && activeEmpresaId) {
+            loadFacturas(false);
+        }
+    }, [user, isAuthLoading, activeEmpresaId, loadFacturas]);
+
+    // Redirigir según autenticación
+    useEffect(() => {
+        if (isAuthLoading) return;
+
+        const isPublicPage = publicRoutes.includes(pathname);
+
+        if (!user && !isPublicPage) {
+            router.push('/login');
+        } else if (user && isPublicPage) {
+            router.push('/');
+        }
+    }, [user, isAuthLoading, pathname, router]);
+
+    const handleStatusChange = useCallback(async (facturaId: string, newStatus: string) => {
+        if (!user || !activeEmpresaId) return;
+
+        // Actualizar UI optimísticamente
+        setFacturas(prevFacturas =>
+            prevFacturas.map(f => (f.id === facturaId ? { ...f, estado: newStatus } : f))
+        );
+
+        try {
+            await updateFacturaStatusAction(activeEmpresaId, facturaId, newStatus);
+            addLog('INFO', `Estado de la factura ${facturaId} cambiado a ${newStatus}.`);
+        } catch (error) {
+            addLog('ERROR', `No se pudo actualizar el estado de la factura ${facturaId}`, error);
+            // Recargar facturas en caso de error
+            loadFacturas(true);
+        }
+    }, [user, addLog, loadFacturas, activeEmpresaId]);
+
+    const contextValue = useMemo(() => ({
+        user,
+        userRole,
+        empresaRole,
+        isAuthLoading,
+        facturas,
+        setFacturas,
+        isFacturasLoading,
+        reloadFacturas: loadFacturas,
+        handleStatusChange,
+        activeEmpresaId,
+        userEmpresas,
+        switchEmpresa,
+        reloadAuth: () => user ? loadUserData(user) : {},
+    }), [
+        user,
+        userRole,
+        empresaRole,
+        isAuthLoading,
+        facturas,
+        isFacturasLoading,
+        loadFacturas,
+        handleStatusChange,
+        activeEmpresaId,
+        userEmpresas,
+        switchEmpresa,
+        loadUserData
+    ]);
+
     const isPublicPage = publicRoutes.includes(pathname);
-    if (!user && !isPublicPage) {
-      // router.push('/login'); // Disable redirect for mock
-    } else if (user && isPublicPage) {
-      router.push('/');
+
+    // Loading screen
+    if (isAuthLoading && !isPublicPage) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-primary rounded-lg">
+                        <MessageSquare className="w-6 h-6 text-primary-foreground" />
+                    </div>
+                    <h2 className="text-lg font-bold text-foreground">
+                        Nexo
+                    </h2>
+                </div>
+                <p className="text-muted-foreground">Verificando sesión...</p>
+            </div>
+        );
     }
-  }, [user, isAuthLoading, pathname, router]);
 
-  const handleStatusChange = useCallback(async (facturaId: string, newStatus: string) => {
-    if (!user || !activeEmpresaId) return;
-
-    setFacturas(prevFacturas =>
-      prevFacturas.map(f => (f.id === facturaId ? { ...f, estado: newStatus } : f))
-    );
-
-    try {
-      const idToken = await getIdToken(user, true);
-      await updateFacturaStatusAction(idToken, activeEmpresaId, facturaId, newStatus);
-      addLog('INFO', `Estado de la factura ${facturaId} cambiado a ${newStatus} en Firestore.`);
-    } catch (error) {
-      addLog('ERROR', `No se pudo actualizar el estado de la factura ${facturaId}`, error);
-      loadFacturas(true);
+    // Páginas públicas
+    if (isPublicPage) {
+        return <>{children}</>;
     }
-  }, [user, addLog, loadFacturas, activeEmpresaId]);
 
-
-  const contextValue = useMemo(() => ({
-    user,
-    userRole,
-    empresaRole,
-    isAuthLoading,
-    facturas,
-    setFacturas,
-    isFacturasLoading,
-    reloadFacturas: loadFacturas,
-    handleStatusChange,
-    activeEmpresaId,
-    userEmpresas,
-    switchEmpresa,
-    reloadAuth: () => user ? loadUserData(user) : {},
-  }), [user, userRole, empresaRole, isAuthLoading, facturas, isFacturasLoading, loadFacturas, handleStatusChange, activeEmpresaId, userEmpresas, switchEmpresa, loadUserData]);
-
-  const isPublicPage = publicRoutes.includes(pathname);
-
-  if (isAuthLoading && !isPublicPage) {
+    // Usuario autenticado - mostrar layout
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-primary rounded-lg">
-            <MessageSquare className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <h2 className="text-lg font-bold text-foreground">
-            Nexo
-          </h2>
-        </div>
-        <p className="text-muted-foreground">Verificando sesión...</p>
-      </div>
+        <AuthContext.Provider value={contextValue}>
+            <TourProvider>
+                {user ? <LayoutWrapper>{children}</LayoutWrapper> : null}
+                {!user && !isAuthLoading && (
+                    <div className="p-10 text-center">
+                        Redirigiendo al login...
+                    </div>
+                )}
+            </TourProvider>
+        </AuthContext.Provider>
     );
-  }
-
-  if (isPublicPage) {
-    console.log("Rendering public page directly:", pathname);
-    return <>{children}</>;
-  }
-
-  return (
-    <AuthContext.Provider value={contextValue}>
-      <TourProvider>
-        {user ? <LayoutWrapper>{children}</LayoutWrapper> : null}
-        {!user && !isAuthLoading && (
-          <div className="p-10 text-center">
-            User not authenticated but not redirected. This state should be unreachable in production.
-          </div>
-        )}
-      </TourProvider>
-    </AuthContext.Provider>
-  );
 }
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+    const context = useContext(AuthContext);
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 };
