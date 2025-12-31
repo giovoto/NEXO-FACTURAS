@@ -1,12 +1,9 @@
 import type { Metadata } from 'next';
-import { Host_Grotesk } from 'next/font/google';
 import './globals.css';
 import { cn } from '@/lib/utils';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LogProvider } from '@/lib/logger.tsx';
 import { AuthProvider } from '@/components/auth-provider';
-
-const hostGrotesk = Host_Grotesk({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Nexo',
@@ -22,8 +19,7 @@ export default function RootLayout({
     <html lang="es" suppressHydrationWarning>
       <body
         className={cn(
-          'min-h-screen w-full bg-background font-sans antialiased',
-          hostGrotesk.className
+          'min-h-screen w-full bg-background font-sans antialiased'
         )}
       >
         <ThemeProvider>
