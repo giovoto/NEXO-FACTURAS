@@ -60,9 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userId = await getUserId(currentUser.id);
 
             if (!userId) {
-                addLog('ERROR', 'User not found in users table');
+                addLog('WARN', 'User not found in users table yet - trigger may be pending');
+                // Usuario autenticado pero aún no en public.users - es nuevo, dejarlo pasar
                 setUserRole('user');
                 setEmpresaRole('viewer');
+                setUserEmpresas([]);
+                setActiveEmpresaId(null);
                 setIsAuthLoading(false);
                 return;
             }
@@ -119,13 +122,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 addLog('INFO', 'User has no assigned companies');
             }
 
-            // Por ahora, establecer userRole como 'user' (en el futuro se puede agregar campo de rol global)
+            // Por ahora, establecer userRole como 'user'
             setUserRole('user');
 
         } catch (error) {
+            console.error('Error in loadUserData:', error);
             addLog('ERROR', 'Error fetching user roles and companies', error);
             setUserRole('user');
             setEmpresaRole('viewer');
+            setUserEmpresas([]);
+            setActiveEmpresaId(null);
         } finally {
             setIsAuthLoading(false);
         }
