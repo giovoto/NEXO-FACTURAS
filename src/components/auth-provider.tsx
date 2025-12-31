@@ -52,14 +52,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { addLog } = useLogs();
 
     const loadUserData = useCallback(async (currentUser: User) => {
+        console.log('[AuthProvider] Loading user data for:', currentUser.email);
         setIsAuthLoading(true);
+
         try {
             addLog('INFO', `Loading user data for ${currentUser.email}`);
 
             // Obtener el user_id de la tabla users usando auth_id
+            console.log('[AuthProvider] Getting userId for auth_id:', currentUser.id);
             const userId = await getUserId(currentUser.id);
+            console.log('[AuthProvider] Got userId:', userId);
 
             if (!userId) {
+                console.warn('[AuthProvider] User not found in users table yet');
                 addLog('WARN', 'User not found in users table yet - trigger may be pending');
                 // Usuario autenticado pero aún no en public.users - es nuevo, dejarlo pasar
                 setUserRole('user');
@@ -71,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             // Obtener las empresas del usuario desde user_empresas
+            console.log('[AuthProvider] Fetching empresas for userId:', userId);
             const { data: userEmpresasData, error: empresasError } = await supabase
                 .from('user_empresas')
                 .select(`
@@ -87,12 +93,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         `)
                 .eq('user_id', userId);
 
+            console.log('[AuthProvider] Empresas data:', userEmpresasData, 'error:', empresasError);
+
             if (empresasError) {
+                console.error('[AuthProvider] Error fetching empresas:', empresasError);
                 addLog('ERROR', 'Error fetching user empresas', empresasError);
                 setUserEmpresas([]);
                 setActiveEmpresaId(null);
                 setEmpresaRole('viewer');
-            } else if (userEmpresasData && userEmpresasData.length > 0) {
+                setUserRole('user');
+                setIsAuthLoading(false);
+                return;
+            }
+
+            if (userEmpresasData && userEmpresasData.length > 0) {
+                console.log('[AuthProvider] Found empresas:', userEmpresasData.length);
                 // Mapear los datos a la estructura esperada
                 const empresasData = userEmpresasData.map(item => ({
                     id: item.empresa_id,
@@ -115,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 addLog('INFO', `Active company set to ${currentActiveId} with role ${activeEmpresaData?.role}`);
             } else {
+                console.log('[AuthProvider] No empresas found for user');
                 // Usuario no tiene empresas asignadas
                 setUserEmpresas([]);
                 setActiveEmpresaId(null);
@@ -124,15 +140,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             // Por ahora, establecer userRole como 'user'
             setUserRole('user');
+            console.log('[AuthProvider] User data loaded successfully');
 
         } catch (error) {
-            console.error('Error in loadUserData:', error);
+            console.error('[AuthProvider] Error in loadUserData:', error);
             addLog('ERROR', 'Error fetching user roles and companies', error);
             setUserRole('user');
             setEmpresaRole('viewer');
             setUserEmpresas([]);
             setActiveEmpresaId(null);
         } finally {
+            console.log('[AuthProvider] Setting isAuthLoading to false');
             setIsAuthLoading(false);
         }
     }, [addLog, activeEmpresaId]);
