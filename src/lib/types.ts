@@ -51,6 +51,7 @@ const FacturaSchema = z.object({
   estado: z.string(),
   categoria: z.string().optional(),
   siigoId: z.string().optional(),
+  filePath: z.string().optional(),
 });
 export type Factura = z.infer<typeof FacturaSchema>;
 

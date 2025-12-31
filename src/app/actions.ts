@@ -72,6 +72,7 @@ export async function getFacturasAction(empresaId: string): Promise<Factura[]> {
             lines: f.lines,
             cufe: f.cufe,
             qrCode: f.qr_code,
+            filePath: f.file_path,
         } as Factura));
     } catch (error: any) {
         console.error(`Error al cargar facturas para la empresa ${empresaId}`, error);
@@ -103,7 +104,9 @@ async function addFacturaAction(empresaId: string, facturaData: Partial<Factura>
                 rete_fuente: facturaData.reteFuente,
                 rete_iva: facturaData.reteIva,
                 rete_ica: facturaData.reteIca,
+                rete_ica: facturaData.reteIca,
                 lines: facturaData.lines,
+                file_path: facturaData.filePath,
             })
             .select()
             .single();
@@ -247,6 +250,19 @@ export async function actionImportZip(formData: FormData) {
     }
 
     try {
+        // 1. Upload ZIP to Supabase Storage
+        const filePath = `${empresaId}/${Date.now()}_${file.name}`;
+        const { error: uploadError } = await supabase.storage
+            .from('facturas-zip')
+            .upload(filePath, file);
+
+        if (uploadError) {
+            console.error('Error uploading ZIP to storage:', uploadError);
+            // Continue processing even if upload fails? Or fail?
+            // Let's log it but continue for now, or throw if critical.
+            // throw new Error(`Error subiendo archivo: ${uploadError.message}`);
+        }
+
         const buf = await file.arrayBuffer();
         const parsedItems = await parseInvoiceZip(buf);
         const xmlItem = parsedItems.find((item): item is { type: 'xml'; name: string; parsed: any } => item.type === 'xml');
@@ -283,7 +299,10 @@ export async function actionImportZip(formData: FormData) {
             valorTotal: invoiceDataForSiigo.totalAmount,
             estado: 'Procesado',
             categoria: invoiceDataForSiigo.categoria,
+            estado: 'Procesado',
+            categoria: invoiceDataForSiigo.categoria,
             siigoId: siigoResponse.id,
+            filePath: filePath, // Save storage path reference
         });
 
         return {

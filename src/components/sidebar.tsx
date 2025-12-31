@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { User } from 'firebase/auth';
+import { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
