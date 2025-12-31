@@ -1,4 +1,3 @@
-
 'use server';
 
 import 'server-only';
@@ -6,165 +5,189 @@ import { z } from 'zod';
 import type { Factura, UserRole, Empresa } from '@/lib/types';
 import { createPurchaseInvoice } from '@/lib/server/siigo-actions';
 import { parseInvoiceZip } from '@/services/zip-service';
-import { getAuthenticatedUser, db, authAdmin } from '@/lib/firebase-admin';
-import { collection, getDocs, addDoc, query, orderBy, serverTimestamp, getDoc, doc, updateDoc, Timestamp, writeBatch, setDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
+import { getSupabaseAdmin, getUserId } from '@/lib/supabase';
+// Temporarily disabled Firebase imports
+// import { getAuthenticatedUser, db, authAdmin } from '@/lib/firebase-admin';
 import { processRecentEmails } from '@/services/gmail-service';
 import { findOrCreateContactAction } from './agenda/actions';
 
-const getFacturasCollection = (empresaId: string) => collection(db, 'empresas', empresaId, 'invoices');
-const getEmpresasCollection = () => collection(db, 'empresas');
-const getUsersCollection = () => collection(db, 'users');
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
 
-// Helper to convert Firestore Timestamps to ISO strings
-const convertTimestamps = (data: any) => {
-    const newData: any = {};
-    for (const key in data) {
-        if (data[key] instanceof Timestamp) {
-            newData[key] = data[key].toDate().toISOString();
-        } else if (data[key] && typeof data[key] === 'object' && !Array.isArray(data[key])) {
-            newData[key] = convertTimestamps(data[key]);
-        }
-        else {
-            newData[key] = data[key];
-        }
+async function getCurrentUserId(): Promise<string> {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser();
+
+    if (error || !user) {
+        throw new Error('Usuario no autenticado');
     }
-    return newData;
-};
 
-async function getInitialFacturas(empresaId: string, userId: string): Promise<any[]> {
-    const initialData = [
-        {
-            nombreEmisor: 'Digital Solutions S.A.S.',
-            folio: 'FVE-001',
-            fecha: '2024-07-22',
-            fechaVencimiento: '2024-08-21',
-            valorTotal: 1190000,
-            estado: 'Aceptado',
-            categoria: 'Servicios Digitales',
-            siigoId: `siigo-sim-${Date.now()}`,
-        },
-        {
-            nombreEmisor: 'Logística Total Ltda.',
-            folio: 'LT-8452',
-            fecha: '2024-07-21',
-            fechaVencimiento: '2024-08-05',
-            valorTotal: 250000,
-            estado: 'Procesado',
-            categoria: 'Transporte',
-        },
-    ];
-
-    const facturasCollection = getFacturasCollection(empresaId);
-    const batch = db.batch();
-    initialData.forEach(factura => {
-        const docRef = doc(facturasCollection); // Create a new doc reference
-        batch.set(docRef, { ...factura, userId, createdAt: serverTimestamp() });
-    });
-    await batch.commit();
-
-    const snapshot = await getDocs(query(facturasCollection, orderBy('createdAt', 'desc')));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...convertTimestamps(doc.data()) }));
+    // Get user_id from public.users using auth_id
+    return await getUserId(user.id);
 }
 
+// ============================================
+// FACTURAS CRUD
+// ============================================
 
-// --- API Functions ---
-// --- API Functions ---
-export async function getFacturasAction(idToken: string, empresaId: string): Promise<Factura[]> {
-    // MOCK DATA FOR PROTOTYPE
-    console.log('Returning MOCK facturas for prototype');
-    return [
-        {
-            id: '1',
-            nombreEmisor: 'Digital Solutions S.A.S.',
-            folio: 'FVE-001',
-            fecha: '2024-07-22',
-            fechaVencimiento: '2024-08-21',
-            valorTotal: 1190000,
-            estado: 'Aceptado',
-            categoria: 'Servicios Digitales',
-            siigoId: `siigo-sim-1`,
-        },
-        {
-            id: '2',
-            nombreEmisor: 'Logística Total Ltda.',
-            folio: 'LT-8452',
-            fecha: '2024-07-21',
-            fechaVencimiento: '2024-08-05',
-            valorTotal: 250000,
-            estado: 'Procesado',
-            categoria: 'Transporte',
-        },
-        {
-            id: '3',
-            nombreEmisor: 'Papelería y Suministros El Centro',
-            folio: 'FAC-2024-88',
-            fecha: '2024-12-08',
-            fechaVencimiento: '2024-12-15',
-            valorTotal: 450000,
-            estado: 'Por Causar',
-            categoria: 'Suministros',
-        }
-    ];
-
-    //   const caller = await getAuthenticatedUser(idToken, empresaId); // Default role 'viewer' is enough
-    //   const userId = caller.uid;
-
-    //   try {
-    //     const facturasCollection = getFacturasCollection(empresaId);
-    //     const snapshot = await getDocs(query(facturasCollection, orderBy('fecha', 'desc')));
-
-    //     if (snapshot.empty) {
-    //         // Only create initial data if the user is an admin of the company
-    //         if (caller.empresaRole === 'admin') {
-    //             return await getInitialFacturas(empresaId, userId);
-    //         }
-    //         return [];
-    //     }
-
-    //     const facturas = snapshot.docs.map(doc => ({ id: doc.id, ...convertTimestamps(doc.data()) } as Factura));
-    //     return facturas;
-
-    //   } catch (error: any) {
-    //       console.error(`Error al cargar facturas para la empresa ${empresaId}`, error);
-    //       throw new Error(`Error al obtener facturas: ${error.message}`);
-    //   }
-}
-
-async function addFacturaAction(idToken: string, empresaId: string, facturaData: Omit<Factura, 'id' | 'userId' | 'createdAt'>): Promise<Factura> {
-    const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-    const facturasCollection = getFacturasCollection(empresaId);
-    const docRef = await addDoc(facturasCollection, { ...facturaData, userId: caller.uid, createdAt: serverTimestamp() });
-    const newDoc = await getDoc(docRef);
-    return { id: newDoc.id, ...convertTimestamps(newDoc.data()) } as Factura;
-}
-
-export async function updateFacturaStatusAction(idToken: string, empresaId: string, facturaId: string, newStatus: string): Promise<void> {
-    const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-    const facturaRef = doc(db, 'empresas', empresaId, 'invoices', facturaId);
-    await updateDoc(facturaRef, { estado: newStatus });
-}
-
-
-export async function procesarCorreosAction(idToken: string, empresaId: string): Promise<{ success: boolean; message: string }> {
-    const caller = await getAuthenticatedUser(idToken, empresaId, ['admin']);
-    const userId = caller.uid;
-
+export async function getFacturasAction(empresaId: string): Promise<Factura[]> {
     try {
-        const newInvoicesData = await processRecentEmails(userId);
+        const { data: facturas, error } = await supabase
+            .from('facturas')
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .order('issue_date', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching facturas:', error);
+            throw new Error(`Error al obtener facturas: ${error.message}`);
+        }
+
+        // Map database fields to Factura interface
+        return (facturas || []).map(f => ({
+            id: f.id,
+            nombreEmisor: f.supplier_name || '',
+            folio: f.folio || '',
+            fecha: f.issue_date || '',
+            fechaVencimiento: f.due_date || '',
+            valorTotal: f.total || 0,
+            estado: f.estado || 'pendiente',
+            categoria: f.doc_type || 'General',
+            siigoId: f.profile_id || '',
+            // Additional fields
+            supplierTaxId: f.supplier_tax_id,
+            supplierAddress: f.supplier_address,
+            supplierCity: f.supplier_city,
+            supplierEmail: f.supplier_email,
+            supplierPhone: f.supplier_phone,
+            customerName: f.customer_name,
+            customerTaxId: f.customer_tax_id,
+            subtotal: f.subtotal,
+            taxes: f.taxes,
+            reteFuente: f.rete_fuente,
+            reteIva: f.rete_iva,
+            reteIca: f.rete_ica,
+            lines: f.lines,
+            cufe: f.cufe,
+            qrCode: f.qr_code,
+        } as Factura));
+    } catch (error: any) {
+        console.error(`Error al cargar facturas para la empresa ${empresaId}`, error);
+        throw new Error(`Error al obtener facturas: ${error.message}`);
+    }
+}
+
+async function addFacturaAction(empresaId: string, facturaData: Partial<Factura>): Promise<Factura> {
+    try {
+        const userId = await getCurrentUserId();
+
+        const { data, error } = await supabase
+            .from('facturas')
+            .insert({
+                empresa_id: empresaId,
+                supplier_name: facturaData.nombreEmisor,
+                folio: facturaData.folio,
+                issue_date: facturaData.fecha,
+                due_date: facturaData.fechaVencimiento,
+                total: facturaData.valorTotal,
+                estado: facturaData.estado || 'pendiente',
+                doc_type: facturaData.categoria,
+                profile_id: facturaData.siigoId,
+                created_by: userId,
+                // Additional fields
+                supplier_tax_id: facturaData.supplierTaxId,
+                subtotal: facturaData.subtotal,
+                taxes: facturaData.taxes,
+                rete_fuente: facturaData.reteFuente,
+                rete_iva: facturaData.reteIva,
+                rete_ica: facturaData.reteIca,
+                lines: facturaData.lines,
+            })
+            .select()
+            .single();
+
+        if (error) {
+            throw new Error(`Error al crear factura: ${error.message}`);
+        }
+
+        return {
+            id: data.id,
+            nombreEmisor: data.supplier_name || '',
+            folio: data.folio || '',
+            fecha: data.issue_date || '',
+            fechaVencimiento: data.due_date || '',
+            valorTotal: data.total || 0,
+            estado: data.estado || 'pendiente',
+            categoria: data.doc_type || 'General',
+            siigoId: data.profile_id || '',
+        } as Factura;
+    } catch (error: any) {
+        console.error('Error adding factura:', error);
+        throw error;
+    }
+}
+
+export async function updateFacturaStatusAction(
+    empresaId: string,
+    facturaId: string,
+    newStatus: string
+): Promise<void> {
+    try {
+        const { error } = await supabase
+            .from('facturas')
+            .update({ estado: newStatus })
+            .eq('id', facturaId)
+            .eq('empresa_id', empresaId);
+
+        if (error) {
+            throw new Error(`Error al actualizar factura: ${error.message}`);
+        }
+    } catch (error: any) {
+        console.error('Error updating factura status:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// EMAIL PROCESSING
+// ============================================
+
+export async function procesarCorreosAction(empresaId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        const userId = await getCurrentUserId();
+
+        // Get user's google refresh token
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('google_refresh_token')
+            .eq('id', userId)
+            .single();
+
+        if (userError || !userData?.google_refresh_token) {
+            return { success: false, message: 'No has conectado tu cuenta de Google. Ve a Configuración para empezar.' };
+        }
+
+        const newInvoicesData = await processRecentEmails(userData.google_refresh_token);
 
         if (newInvoicesData.length === 0) {
             return { success: true, message: 'No se encontraron nuevas facturas en tu correo.' };
         }
 
         for (const invoiceData of newInvoicesData) {
-            const contact = await findOrCreateContactAction(idToken, empresaId, {
+            const contact = await findOrCreateContactAction(empresaId, {
                 identificacion: invoiceData.supplierId,
                 proveedor: invoiceData.supplierName,
             });
 
-            const siigoResponse = await createPurchaseInvoice({ ...invoiceData, supplierId: contact.identificacion, supplierName: contact.proveedor });
+            const siigoResponse = await createPurchaseInvoice({
+                ...invoiceData,
+                supplierId: contact.identificacion,
+                supplierName: contact.proveedor,
+            });
 
-            await addFacturaAction(idToken, empresaId, {
+            await addFacturaAction(empresaId, {
                 nombreEmisor: invoiceData.supplierName,
                 folio: invoiceData.invoiceNumber,
                 fecha: invoiceData.invoiceDate,
@@ -178,58 +201,63 @@ export async function procesarCorreosAction(idToken: string, empresaId: string):
 
         const message = `Se procesaron ${newInvoicesData.length} nuevos comprobantes. Revisa la lista para ver los detalles.`;
         return { success: true, message };
-
     } catch (error: any) {
         console.error('Error in procesarCorreosAction:', error);
-        if (error.message.includes('GMAIL_REFRESH_TOKEN is not set')) {
+        if (error.message.includes('GMAIL_REFRESH_TOKEN')) {
             return { success: false, message: 'No has conectado tu cuenta de Google. Ve a Configuración para empezar.' };
         }
         return { success: false, message: `Error procesando correos: ${error.message}` };
     }
 }
 
+// ============================================
+// EXPORT
+// ============================================
 
-export async function exportarFacturasAction(idToken: string, empresaId: string): Promise<{ url: string }> {
-    await getAuthenticatedUser(idToken, empresaId); // Viewer can export
-    const userFacturas = await getFacturasAction(idToken, empresaId);
-    if (userFacturas.length === 0) {
-        return { url: '' };
+export async function exportarFacturasAction(empresaId: string): Promise<{ url: string }> {
+    try {
+        const facturas = await getFacturasAction(empresaId);
+
+        if (facturas.length === 0) {
+            return { url: '' };
+        }
+
+        const headers = Object.keys(facturas[0] || {}).join(',');
+        const rows = facturas.map(factura => Object.values(factura).join(',')).join('\n');
+        const csvContent = `${headers}\n${rows}`;
+        const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+
+        return { url };
+    } catch (error: any) {
+        console.error('Error exporting facturas:', error);
+        throw error;
     }
-    const headers = Object.keys(userFacturas[0] || {}).join(',');
-    const rows = userFacturas.map(factura => Object.values(factura).join(',')).join('\n');
-    const csvContent = `${headers}\n${rows}`;
-    const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
-
-    return { url };
 }
 
-
-
-// --- ZIP Processing Action ---
+// ============================================
+// ZIP PROCESSING
+// ============================================
 
 export async function actionImportZip(formData: FormData) {
-    const idToken = formData.get('idToken') as string;
     const empresaId = formData.get('empresaId') as string;
     const file = formData.get('file') as File;
 
-    if (!idToken || !empresaId || !file) {
-        return { success: false, error: "Faltan datos requeridos (token, empresa, archivo)." };
+    if (!empresaId || !file) {
+        return { success: false, error: 'Faltan datos requeridos (empresa, archivo).' };
     }
 
     try {
-        const caller = await getAuthenticatedUser(idToken, empresaId, ['admin', 'editor']);
-        // Need to convert to ArrayBuffer
         const buf = await file.arrayBuffer();
         const parsedItems = await parseInvoiceZip(buf);
         const xmlItem = parsedItems.find((item): item is { type: 'xml'; name: string; parsed: any } => item.type === 'xml');
 
         if (!xmlItem) {
-            throw new Error("No se encontró un archivo XML válido en el ZIP.");
+            throw new Error('No se encontró un archivo XML válido en el ZIP.');
         }
 
         const inv = xmlItem.parsed;
 
-        const contact = await findOrCreateContactAction(idToken, empresaId, {
+        const contact = await findOrCreateContactAction(empresaId, {
             identificacion: inv.supplierTaxId || 'N/A',
             proveedor: inv.supplierName || 'N/A',
         });
@@ -247,7 +275,7 @@ export async function actionImportZip(formData: FormData) {
 
         const siigoResponse = await createPurchaseInvoice(invoiceDataForSiigo);
 
-        await addFacturaAction(idToken, empresaId, {
+        await addFacturaAction(empresaId, {
             nombreEmisor: invoiceDataForSiigo.supplierName,
             folio: invoiceDataForSiigo.invoiceNumber,
             fecha: invoiceDataForSiigo.invoiceDate,
@@ -257,7 +285,6 @@ export async function actionImportZip(formData: FormData) {
             categoria: invoiceDataForSiigo.categoria,
             siigoId: siigoResponse.id,
         });
-
 
         return {
             success: true,
@@ -272,161 +299,68 @@ export async function actionImportZip(formData: FormData) {
     }
 }
 
-// --- ACCIONES DIAN REALES ---
+// ============================================
+// USER & EMPRESA MANAGEMENT
+// ============================================
 
-export async function getDianDocumentsAction(token: string, empresaId: string, dianTokenUrl: string) {
+export async function createEmpresaAction(nombre: string, nit: string): Promise<{ id: string }> {
+    try {
+        const userId = await getCurrentUserId();
+
+        // Create empresa
+        const { data: empresaData, error: empresaError } = await supabase
+            .from('empresas')
+            .insert({
+                nombre,
+                nit: nit || 'N/A',
+            })
+            .select()
+            .single();
+
+        if (empresaError) {
+            throw new Error(`Error al crear empresa: ${empresaError.message}`);
+        }
+
+        // Assign user as admin
+        const { error: userEmpresaError } = await supabase
+            .from('user_empresas')
+            .insert({
+                user_id: userId,
+                empresa_id: empresaData.id,
+                role: 'admin',
+            });
+
+        if (userEmpresaError) {
+            throw new Error(`Error al asignar usuario a empresa: ${userEmpresaError.message}`);
+        }
+
+        return { id: empresaData.id };
+    } catch (error: any) {
+        console.error('Error creating empresa:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// DIAN INTEGRATION
+// ============================================
+
+export async function getDianDocumentsAction(empresaId: string, dianTokenUrl: string) {
     try {
         console.log('Iniciando sincronización DIAN para empresa:', empresaId);
 
-        // Dynamic import to avoid bundling issues if any
         const { scrapeDianDocuments } = await import('@/services/dian-scraper');
-
         const result = await scrapeDianDocuments(dianTokenUrl);
 
         return result;
-
     } catch (error: any) {
         console.error('Error en getDianDocumentsAction:', error);
         return { success: false, message: error.message, documents: [] };
     }
 }
 
-// --- Role and Company Management ---
-
-async function assignInitialSuperAdmin(email: string): Promise<{ wasAssigned: boolean; userExists: boolean }> {
-    try {
-        const superAdminUsers = await authAdmin.listUsers(1).then(res =>
-            res.users.filter(u => u.customClaims?.role === 'superadmin')
-        );
-
-        if (superAdminUsers.length > 0) return { wasAssigned: false, userExists: true };
-
-        const user = await authAdmin.getUserByEmail(email);
-
-        if (!user.customClaims?.role) {
-            await authAdmin.setCustomUserClaims(user.uid, { role: 'superadmin' });
-            return { wasAssigned: true, userExists: true };
-        }
-    } catch (error: any) {
-        if (error.code === 'auth/user-not-found') return { wasAssigned: false, userExists: false };
-        console.error("Error in initial superadmin assignment:", error);
-    }
-    return { wasAssigned: false, userExists: true };
-}
-
-
-export async function setSuperAdminAction(idToken: string, email: string): Promise<{ success: boolean; message: string; error?: string }> {
-    try {
-        const caller = await getAuthenticatedUser(idToken);
-        if (caller.role !== 'superadmin') {
-            throw new Error('Permission denied. Only superadmins can assign roles.');
-        }
-
-        const userToUpdate = await authAdmin.getUserByEmail(email);
-        if (userToUpdate.customClaims?.role === 'superadmin') {
-            return { success: true, message: `El usuario ${email} ya es superadministrador.` };
-        }
-
-        await authAdmin.setCustomUserClaims(userToUpdate.uid, { role: 'superadmin' });
-        return { success: true, message: `El usuario ${email} ahora es superadministrador.` };
-    } catch (error: any) {
-        if (error.code === 'auth/user-not-found') {
-            return { success: false, error: `El usuario con el email ${email} no fue encontrado.` };
-        }
-        return { success: false, error: error.message };
-    }
-}
-
-async function createInitialEmpresaAction(uid: string, email: string | undefined | null, displayName: string | undefined | null): Promise<string> {
-    const userDocRef = getUsersCollection().doc(uid);
-    const userDoc = await userDocRef.get();
-
-    // Check if user already has companies
-    const existingEmpresas = userDoc.data()?.empresas;
-    if (existingEmpresas && Object.keys(existingEmpresas).length > 0) {
-        return Object.keys(existingEmpresas)[0]; // Return first company ID
-    }
-
-    const newEmpresaRef = getEmpresasCollection().doc();
-    const newEmpresaData = {
-        nombre: `Empresa de ${displayName || email}`,
-        nit: 'N/A',
-        createdAt: serverTimestamp(),
-        usuarios: {
-            [uid]: 'admin' // The creator is the admin
-        }
-    };
-
-    await setDoc(newEmpresaRef, newEmpresaData);
-
-    // Update the user's document with the new company and role
-    await setDoc(userDocRef, {
-        empresas: {
-            [newEmpresaRef.id]: 'admin'
-        }
-    }, { merge: true });
-
-    return newEmpresaRef.id;
-}
-
-
-export async function onUserCreateAction(uid: string, email: string | null, displayName?: string | null): Promise<void> {
-    const userDocRef = getUsersCollection().doc(uid);
-    const userDoc = await userDoc.get();
-
-    // Set custom claim if not present
-    const user = await authAdmin.getUser(uid);
-    if (!user.customClaims || Object.keys(user.customClaims).length === 0) {
-        if (email === 'govany.neuta@hotmail.com') {
-            await assignInitialSuperAdmin(email);
-        } else {
-            await authAdmin.setCustomUserClaims(uid, { role: 'user' });
-        }
-    }
-
-    // Create User document in Firestore if it doesn't exist
-    if (!userDoc.exists) {
-        await setDoc(userDocRef, {
-            email: email,
-            displayName: displayName,
-            createdAt: serverTimestamp(),
-            empresas: {}
-        });
-        // Create an initial company for the new user
-        await createInitialEmpresaAction(uid, email, displayName);
-    }
-}
-
-
-export async function createEmpresaAction(idToken: string, nombre: string, nit: string): Promise<{ id: string }> {
-    const caller = await getAuthenticatedUser(idToken);
-    const uid = caller.uid;
-
-    const newEmpresaRef = getEmpresasCollection().doc();
-    const newEmpresaData = {
-        nombre,
-        nit: nit || 'N/A',
-        createdAt: serverTimestamp(),
-        usuarios: {
-            [uid]: 'admin' // The creator is the admin
-        }
-    };
-
-    await setDoc(newEmpresaRef, newEmpresaData);
-
-    // Update the user's document with the new company and role
-    await setDoc(getUsersCollection().doc(uid), {
-        empresas: {
-            [newEmpresaRef.id]: 'admin'
-        }
-    }, { merge: true });
-
-    return { id: newEmpresaRef.id };
-}
-
 export async function saveDianCredentialsAction(token: string, softwareId: string) {
-    'use server';
-    // Here we would effectively save to Firestore under /companies/{id}/config/dian
+    // TODO: Implement saving to empresa config in Supabase
     console.log('Saving DIAN credentials:', { token: token.substring(0, 5) + '...', softwareId });
     await new Promise(resolve => setTimeout(resolve, 1000));
     return { success: true };
