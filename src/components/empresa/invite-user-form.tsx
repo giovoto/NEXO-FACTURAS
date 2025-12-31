@@ -34,7 +34,7 @@ import { useAuth } from '../auth-provider';
 import { inviteUserAction } from '@/app/empresa/usuarios/actions';
 import type { EmpresaRole } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
-import type { User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Por favor, introduce un correo válido.' }),
