@@ -23,8 +23,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { User, updateProfile } from 'firebase/auth';
-import { useLogs } from '@/lib/logger.tsx';
+import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
+import { useLogs } from '@/lib/logger'; // Removed .tsx extension from import
 import { Loader2 } from 'lucide-react';
 
 const formSchema = z.object({
@@ -44,17 +45,21 @@ export const ProfileForm = memo(function ProfileForm({ user, isOpen, onClose }: 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Get display name from user_metadata or standard property
+  const currentDisplayName = user.user_metadata?.full_name || user.user_metadata?.display_name || '';
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      displayName: user.displayName || '',
+      displayName: currentDisplayName,
     },
   });
 
   useEffect(() => {
     if (user) {
+      const name = user.user_metadata?.full_name || user.user_metadata?.display_name || '';
       form.reset({
-        displayName: user.displayName || '',
+        displayName: name,
       });
     }
     setError('');
@@ -65,10 +70,25 @@ export const ProfileForm = memo(function ProfileForm({ user, isOpen, onClose }: 
     setIsLoading(true);
     addLog('INFO', 'Intentando actualizar el perfil del usuario...');
     try {
-      await updateProfile(user, {
-        displayName: data.displayName,
+      // Update Supabase Auth metadata
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { full_name: data.displayName, display_name: data.displayName }
       });
+
+      if (authError) throw authError;
+
+      // Update public users table
+      const { error: dbError } = await supabase
+        .from('users')
+        .update({ display_name: data.displayName })
+        .eq('auth_id', user.id);
+
+      if (dbError) throw dbError;
+
       addLog('SUCCESS', 'Perfil actualizado correctamente.');
+
+      // Force refresh of the page or session might be needed to see changes immediately
+      // router.refresh(); // Optional
       onClose();
     } catch (err: any) {
       const errorMessage = `Error al actualizar el perfil: ${err.message}`;
@@ -80,7 +100,7 @@ export const ProfileForm = memo(function ProfileForm({ user, isOpen, onClose }: 
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Editar Perfil</DialogTitle>
@@ -104,12 +124,12 @@ export const ProfileForm = memo(function ProfileForm({ user, isOpen, onClose }: 
               )}
             />
             {error && <p className="text-sm text-red-600">{error}</p>}
-             <DialogFooter>
-                <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>Cancelar</Button>
-                <Button type="submit" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Guardar Cambios
-                </Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>Cancelar</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar Cambios
+              </Button>
             </DialogFooter>
           </form>
         </Form>

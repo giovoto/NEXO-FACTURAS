@@ -80,33 +80,39 @@ export async function getFacturasAction(empresaId: string): Promise<Factura[]> {
     }
 }
 
+import { FacturaSchema } from '@/lib/types';
+
 async function addFacturaAction(empresaId: string, facturaData: Partial<Factura>): Promise<Factura> {
     try {
         const userId = await getCurrentUserId();
+
+        // Validar datos con Zod (partial porque es creación y ID se genera, etc)
+        // Omitimos ID y otros campos que genera la BD
+        const validationSchema = FacturaSchema.omit({ id: true }).partial();
+        const validatedData = validationSchema.parse(facturaData);
 
         const { data, error } = await supabase
             .from('facturas')
             .insert({
                 empresa_id: empresaId,
-                supplier_name: facturaData.nombreEmisor,
-                folio: facturaData.folio,
-                issue_date: facturaData.fecha,
-                due_date: facturaData.fechaVencimiento,
-                total: facturaData.valorTotal,
-                estado: facturaData.estado || 'pendiente',
-                doc_type: facturaData.categoria,
-                profile_id: facturaData.siigoId,
+                supplier_name: validatedData.nombreEmisor,
+                folio: validatedData.folio,
+                issue_date: validatedData.fecha,
+                due_date: validatedData.fechaVencimiento,
+                total: validatedData.valorTotal,
+                estado: validatedData.estado || 'pendiente',
+                doc_type: validatedData.categoria,
+                profile_id: validatedData.siigoId,
                 created_by: userId,
                 // Additional fields
-                supplier_tax_id: facturaData.supplierTaxId,
-                subtotal: facturaData.subtotal,
-                taxes: facturaData.taxes,
-                rete_fuente: facturaData.reteFuente,
-                rete_iva: facturaData.reteIva,
-                rete_ica: facturaData.reteIca,
-                rete_ica: facturaData.reteIca,
-                lines: facturaData.lines,
-                file_path: facturaData.filePath,
+                supplier_tax_id: validatedData.supplierTaxId,
+                subtotal: validatedData.subtotal,
+                taxes: validatedData.taxes,
+                rete_fuente: validatedData.reteFuente,
+                rete_iva: validatedData.reteIva,
+                rete_ica: validatedData.reteIca,
+                lines: validatedData.lines,
+                file_path: validatedData.filePath,
             })
             .select()
             .single();

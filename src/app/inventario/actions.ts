@@ -3,6 +3,7 @@
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
 import type { Bodega, Producto, Salida } from '@/lib/types';
+import type { Database } from '@/types/database.types';
 
 // ============================================
 // WAREHOUSE (BODEGAS) CRUD
@@ -284,15 +285,18 @@ export async function getOutgoingsAction(empresaId: string): Promise<Salida[]> {
             throw new Error(`Error fetching outgoings: ${error.message}`);
         }
 
-        return (outgoings || []).map(o => ({
+        const typedOutgoings = (outgoings as unknown) as Database['public']['Tables']['outgoings']['Row'][];
+
+        return typedOutgoings.map(o => ({
             id: o.id,
-            productId: o.product_id,
-            productName: o.product_id, // Will need to join with products for name
-            warehouseId: o.warehouse_id,
-            warehouseName: o.warehouse_id, // Will need to join with warehouses for name
+            productId: o.product_id || '',
+            productName: o.product_id || 'Producto Desconocido', // Should ideally join
+            warehouseId: o.warehouse_id || '',
+            warehouseName: o.warehouse_id || 'Bodega Desconocida', // Should ideally join
             quantity: o.cantidad,
-            destinatario: o.destino,
+            destinatario: o.destino || '',
             date: o.created_at,
+            userId: o.created_by || '',
         })) as Salida[];
     } catch (error: any) {
         console.error('Error in getOutgoingsAction:', error);
@@ -317,7 +321,7 @@ export async function createOutgoingAction(
                     cantidad: quantity,
                     destino: destinatario,
                     motivo: 'Salida de inventario',
-                });
+                } as any);
 
             if (outgoingError) {
                 throw new Error(`Error creating outgoing: ${outgoingError.message}`);

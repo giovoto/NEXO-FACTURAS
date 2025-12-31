@@ -52,6 +52,22 @@ const FacturaSchema = z.object({
   categoria: z.string().optional(),
   siigoId: z.string().optional(),
   filePath: z.string().optional(),
+  // Campos extendidos
+  supplierTaxId: z.string().optional(),
+  supplierAddress: z.string().optional(),
+  supplierCity: z.string().optional(),
+  supplierEmail: z.string().optional(),
+  supplierPhone: z.string().optional(),
+  customerName: z.string().optional(),
+  customerTaxId: z.string().optional(),
+  subtotal: z.number().optional(),
+  taxes: z.number().optional(),
+  reteFuente: z.number().optional(),
+  reteIva: z.number().optional(),
+  reteIca: z.number().optional(),
+  lines: z.any().optional(), // Puede ser JSON de líneas
+  cufe: z.string().optional(),
+  qrCode: z.string().optional(),
 });
 export type Factura = z.infer<typeof FacturaSchema>;
 
